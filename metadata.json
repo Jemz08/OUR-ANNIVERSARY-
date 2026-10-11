@@ -1,0 +1,6 @@
+{
+  "name": "Oct26 - Our Love Journey & Shared Memory Gallery",
+  "description": "Private couple website celebrating anniversary every October 26 with a live days-together counter since June 15, 2016 and a shared mobile-friendly photo album.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
