@@ -22,6 +22,12 @@ export const LoveNotesBoard: React.FC<LoveNotesBoardProps> = ({
   const [text, setText] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  React.useEffect(() => {
+    if (currentUserName) {
+      setAuthor(currentUserName);
+    }
+  }, [currentUserName]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) return;

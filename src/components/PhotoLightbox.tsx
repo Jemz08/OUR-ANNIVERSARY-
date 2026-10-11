@@ -32,8 +32,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   onToggleFavorite,
   onDeletePhoto,
 }) => {
-  if (!photo) return null;
-
   const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
   const [slideDirection, setSlideDirection] = useState<'animate-slide-left' | 'animate-slide-right' | ''>('');
   const [poppingHeart, setPoppingHeart] = useState<boolean>(false);
@@ -41,12 +39,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
 
-  const currentIndex = photos.findIndex((p) => p.id === photo.id);
+  const currentIndex = photo ? photos.findIndex((p) => p.id === photo.id) : -1;
   const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex < photos.length - 1;
+  const hasNext = currentIndex >= 0 && currentIndex < photos.length - 1;
 
   const handlePrev = () => {
-    if (hasPrev) {
+    if (hasPrev && photo) {
       setSlideDirection('animate-slide-right');
       onSelectPhoto(photos[currentIndex - 1]);
       setTimeout(() => setSlideDirection(''), 350);
@@ -54,7 +52,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   };
 
   const handleNext = () => {
-    if (hasNext) {
+    if (hasNext && photo) {
       setSlideDirection('animate-slide-left');
       onSelectPhoto(photos[currentIndex + 1]);
       setTimeout(() => setSlideDirection(''), 350);
@@ -63,6 +61,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
   // Keyboard navigation
   useEffect(() => {
+    if (!photo) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowLeft') handlePrev();
@@ -70,7 +69,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, photos]);
+  }, [currentIndex, photos, photo]);
 
   // Touch swipe gestures
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -99,6 +98,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     touchStartXRef.current = null;
     touchStartYRef.current = null;
   };
+
+  if (!photo) return null;
 
   const handleDownload = () => {
     const a = document.createElement('a');

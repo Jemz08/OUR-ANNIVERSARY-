@@ -24,6 +24,22 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
   const [loveQuote, setLoveQuote] = useState(config.loveQuote);
   const [isSaving, setIsSaving] = useState(false);
   const [showSavedMsg, setShowSavedMsg] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  // Synchronize form state with latest config whenever the modal opens
+  React.useEffect(() => {
+    if (isOpen) {
+      setPartner1(config.partner1);
+      setPartner2(config.partner2);
+      setMetDate(config.metDate);
+      setOfficialDate(config.officialDate);
+      setLoveQuote(config.loveQuote);
+      setShowSavedMsg(false);
+      setConfirmReset(false);
+      setCopiedLink(false);
+    }
+  }, [isOpen, config]);
 
   if (!isOpen) return null;
 
@@ -46,9 +62,6 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
       setIsSaving(false);
     }
   };
-
-  const [copiedLink, setCopiedLink] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
 
   const copyAppUrl = () => {
     navigator.clipboard.writeText(window.location.href);

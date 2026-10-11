@@ -23,6 +23,13 @@ export const UserGateModal: React.FC<UserGateModalProps> = ({
   const [rememberMe, setRememberMe] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setName(currentUserName || '');
+      setErrorMsg('');
+    }
+  }, [isOpen, currentUserName]);
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
