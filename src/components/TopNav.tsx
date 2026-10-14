@@ -11,6 +11,7 @@ interface TopNavProps {
   onOpenSettings: () => void;
   onOpenUserSwitch: () => void;
   onTriggerConfetti: () => void;
+  onOpenSkyLantern: () => void;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
@@ -22,6 +23,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   onOpenSettings,
   onOpenUserSwitch,
   onTriggerConfetti,
+  onOpenSkyLantern,
 }) => {
   return (
     <header className="sticky top-0 z-30 bg-[#fff9fa]/90 backdrop-blur-md border-b border-[#ffc2d1]/80 px-3 sm:px-6 md:px-8 py-2.5 sm:py-3.5 transition-all">
@@ -118,6 +120,19 @@ export const TopNav: React.FC<TopNavProps> = ({
               <span className="truncate">{currentUserName}</span>
             </button>
           )}
+
+          {/* Sky Lantern Surprise Button */}
+          <button
+            onClick={onOpenSkyLantern}
+            title="Anniversary Sky Lantern Surprise (Oct 26)"
+            className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 border border-amber-300 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer shadow-2xs"
+            aria-label="Sky Lantern Surprise"
+          >
+            <span className="text-sm">🏮</span>
+            <span className="hidden sm:inline font-serif text-[11px] font-bold text-amber-950">
+              Oct 26
+            </span>
+          </button>
 
           <button
             onClick={onTriggerConfetti}

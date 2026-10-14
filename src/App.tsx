@@ -12,6 +12,8 @@ import { LoveNotesBoard } from './components/LoveNotesBoard';
 import { UploadModal } from './components/UploadModal';
 import { AnniversarySettingsModal } from './components/AnniversarySettingsModal';
 import { UserGateModal } from './components/UserGateModal';
+import { SkyLanternSurprise } from './components/SkyLanternSurprise';
+import { SkyLanternFloatingButton } from './components/SkyLanternFloatingButton';
 import { getCategoryStyle } from './utils/categoryStyles';
 import { applyTheme, getTheme } from './utils/themeUtils';
 
@@ -34,6 +36,14 @@ export default function App() {
   const [tabTransition, setTabTransition] = useState<'animate-slide-left' | 'animate-slide-right' | 'animate-fade-scale'>('animate-fade-scale');
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isSkyLanternOpen, setIsSkyLanternOpen] = useState<boolean>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.has('preview') || params.has('secret');
+    } catch (e) {
+      return false;
+    }
+  });
   const [selectedPhotoForLightbox, setSelectedPhotoForLightbox] = useState<Photo | null>(null);
 
   // Apply stored theme on initial load
@@ -198,6 +208,7 @@ export default function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenUserSwitch={() => setIsGateOpen(true)}
         onTriggerConfetti={triggerConfetti}
+        onOpenSkyLantern={() => setIsSkyLanternOpen(true)}
       />
 
       {/* Main Content Areas with Screen Swiping Gestures */}
@@ -235,6 +246,7 @@ export default function App() {
                 onViewGallery={() => handleSwitchTab('gallery')}
                 onOpenNotes={() => handleSwitchTab('notes')}
                 onTriggerConfetti={triggerConfetti}
+                onOpenSkyLantern={() => setIsSkyLanternOpen(true)}
               />
 
               {/* Quick Preview of Recent Photos on the Home Page with category styles */}
@@ -432,6 +444,20 @@ export default function App() {
         onConfirmUser={handleConfirmUser}
         onClose={() => setIsGateOpen(false)}
         canDismiss={!!currentUserName}
+      />
+
+      {/* Floating Sky Lantern Surprise Button */}
+      <SkyLanternFloatingButton
+        onOpen={() => setIsSkyLanternOpen(true)}
+      />
+
+      {/* Concept 4 Sky Lantern Surprise Modal */}
+      <SkyLanternSurprise
+        config={config}
+        isOpen={isSkyLanternOpen}
+        onClose={() => setIsSkyLanternOpen(false)}
+        onSaveConfig={handleSaveConfig}
+        onTriggerConfetti={triggerConfetti}
       />
     </div>
   );

@@ -19,6 +19,14 @@ export interface LoveNote {
   createdAt: string;
 }
 
+export interface SecretLetter {
+  title?: string;
+  message?: string;
+  sender?: string;
+  recipient?: string;
+  lastUpdated?: string;
+}
+
 export interface CoupleConfig {
   metDate: string; // "2016-06-15"
   officialDate: string; // "2022-10-26"
@@ -28,6 +36,7 @@ export interface CoupleConfig {
   loveQuote: string;
   songTitle?: string;
   theme?: string;
+  secretLetter?: SecretLetter;
 }
 
 export interface TimeBreakdown {

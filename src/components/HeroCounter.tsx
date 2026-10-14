@@ -10,6 +10,7 @@ interface HeroCounterProps {
   onViewGallery: () => void;
   onOpenNotes?: () => void;
   onTriggerConfetti: () => void;
+  onOpenSkyLantern?: () => void;
 }
 
 export const HeroCounter: React.FC<HeroCounterProps> = ({
@@ -19,6 +20,7 @@ export const HeroCounter: React.FC<HeroCounterProps> = ({
   onViewGallery,
   onOpenNotes,
   onTriggerConfetti,
+  onOpenSkyLantern,
 }) => {
   const [now, setNow] = useState<Date>(new Date());
   const [selectedBase, setSelectedBase] = useState<'met' | 'official'>('met');
@@ -270,6 +272,16 @@ export const HeroCounter: React.FC<HeroCounterProps> = ({
                     ({upcomingAnniversary.hoursLeft}h {upcomingAnniversary.minutesLeft}m)
                   </span>
                 </div>
+              )}
+
+              {onOpenSkyLantern && (
+                <button
+                  onClick={onOpenSkyLantern}
+                  className="mt-3 w-full py-1.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-950 border border-amber-300 text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                >
+                  <span>🏮</span>
+                  <span>Anniversary Lantern Surprise</span>
+                </button>
               )}
             </div>
           </div>
