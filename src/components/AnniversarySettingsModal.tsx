@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Heart, Smartphone, Save, RotateCcw, Check, Share2 } from 'lucide-react';
+import { X, Heart, Smartphone, Save, RotateCcw, Check, Share2, Palette } from 'lucide-react';
 import { CoupleConfig } from '../types';
+import { APP_THEMES, applyTheme } from '../utils/themeUtils';
 
 interface AnniversarySettingsModalProps {
   config: CoupleConfig;
@@ -22,6 +23,7 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
   const [metDate, setMetDate] = useState(config.metDate);
   const [officialDate, setOfficialDate] = useState(config.officialDate);
   const [loveQuote, setLoveQuote] = useState(config.loveQuote);
+  const [theme, setTheme] = useState<string>(config.theme || 'romantic-rose');
   const [isSaving, setIsSaving] = useState(false);
   const [showSavedMsg, setShowSavedMsg] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -35,6 +37,7 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
       setMetDate(config.metDate);
       setOfficialDate(config.officialDate);
       setLoveQuote(config.loveQuote);
+      setTheme(config.theme || localStorage.getItem('oct26_active_theme') || 'romantic-rose');
       setShowSavedMsg(false);
       setConfirmReset(false);
       setCopiedLink(false);
@@ -42,6 +45,11 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
   }, [isOpen, config]);
 
   if (!isOpen) return null;
+
+  const handleSelectTheme = (themeId: string) => {
+    setTheme(themeId);
+    applyTheme(themeId);
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,7 +61,9 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
         metDate,
         officialDate,
         loveQuote: loveQuote.trim() || 'Every love story is beautiful, but ours is my favorite.',
+        theme,
       });
+      applyTheme(theme);
       setShowSavedMsg(true);
       setTimeout(() => setShowSavedMsg(false), 2500);
     } catch (err) {
@@ -73,7 +83,7 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in">
       <div className="bg-white rounded-2xl sm:rounded-3xl max-w-lg w-full max-h-[92dvh] overflow-y-auto shadow-2xl border border-[#ffc2d1] my-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#ffe5ec]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#ffe5ec] sticky top-0 bg-white/95 backdrop-blur-xs z-10">
           <div className="flex items-center gap-2">
             <span className="w-7 h-7 rounded-full bg-[#ffe5ec] text-[#fb6f92] flex items-center justify-center border border-[#ffc2d1]">
               <Heart className="w-4 h-4 fill-[#fb6f92]" />
@@ -91,13 +101,74 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
         </div>
 
         {/* Body Form */}
-        <form onSubmit={handleSave} className="p-6 space-y-5">
+        <form onSubmit={handleSave} className="p-5 sm:p-6 space-y-5">
           {showSavedMsg && (
-            <div className="p-3 rounded-xl bg-[#ffe5ec] text-[#5c182b] border border-[#ffc2d1] text-xs flex items-center gap-2">
+            <div className="p-3 rounded-xl bg-[#ffe5ec] text-[#5c182b] border border-[#ffc2d1] text-xs flex items-center gap-2 animate-fade-scale">
               <Check className="w-4 h-4 text-[#fb6f92]" />
-              <span>Settings successfully updated and saved!</span>
+              <span>Settings and theme successfully updated and saved!</span>
             </div>
           )}
+
+          {/* Theme Color Picker Section (New Feature) */}
+          <div className="p-4 rounded-2xl bg-[#fff9fa] border border-[#ffc2d1]">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-stone-900">
+                <Palette className="w-4 h-4 text-[#fb6f92]" />
+                <span>App Theme Colors &amp; Mood</span>
+              </div>
+              <span className="text-[11px] font-semibold text-[#fb6f92]">
+                5 Romance Themes
+              </span>
+            </div>
+            <p className="text-[11px] text-stone-500 mb-3">
+              Choose your favorite couple palette. Changes apply live to all buttons, borders, hearts, and highlights!
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {APP_THEMES.map((t) => {
+                const isSelected = theme === t.id;
+                return (
+                  <div
+                    key={t.id}
+                    onClick={() => handleSelectTheme(t.id)}
+                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all active:scale-95 ${
+                      isSelected
+                        ? 'bg-white border-[#fb6f92] shadow-sm ring-2 ring-[#fb6f92]/25'
+                        : 'bg-white/80 border-stone-200 hover:border-[#ffc2d1] hover:bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-stone-900">
+                        {t.name}
+                      </span>
+                      {isSelected ? (
+                        <span className="w-4 h-4 rounded-full bg-[#fb6f92] text-white flex items-center justify-center text-[10px]">
+                          ✓
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 mb-2">
+                      {t.palette.map((color, idx) => (
+                        <span
+                          key={idx}
+                          className="w-4 h-4 rounded-full border border-black/10 shadow-2xs"
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                      <span className="text-[10px] text-stone-400 ml-1 font-medium">
+                        {t.badge}
+                      </span>
+                    </div>
+
+                    <p className="text-[10px] text-stone-500 leading-tight">
+                      {t.tagline}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Partner Names */}
           <div className="grid grid-cols-2 gap-3">
@@ -122,7 +193,7 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
                 type="text"
                 value={partner2}
                 onChange={(e) => setPartner2(e.target.value)}
-                placeholder="My Love / Her Name"
+                placeholder="Loraine"
                 required
                 className="w-full px-3.5 py-2 bg-[#fff9fa] border border-[#ffc2d1] rounded-xl text-xs md:text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#ff8fab]/20 focus:border-[#fb6f92]"
               />
@@ -203,25 +274,6 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
             </p>
           </div>
 
-          {/* Hosting Guide for Vercel & Cloudflare */}
-          <div className="p-4 rounded-2xl bg-[#fff9fa] border border-[#ffc2d1]/80 space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#ffe5ec] text-[#fb6f92] flex items-center justify-center text-[10px] font-bold">
-                ☁
-              </span>
-              <span className="text-xs font-bold text-stone-800">
-                Hosting on Vercel or Cloudflare
-              </span>
-            </div>
-            <p className="text-[11px] text-stone-600 leading-relaxed">
-              Pre-configured for both platforms!
-              <br />
-              • <strong>Vercel:</strong> Import repository. Build Command: <code className="bg-[#ffe5ec] text-[#5c182b] px-1 py-0.5 rounded text-[10px]">npm run build</code>, Output Directory: <code className="bg-[#ffe5ec] text-[#5c182b] px-1 py-0.5 rounded text-[10px]">dist</code> (<code className="text-stone-500">vercel.json</code> is ready).
-              <br />
-              • <strong>Cloudflare Pages:</strong> Connect git repo. Framework preset: <strong>Vite</strong>, Build Command: <code className="bg-[#ffe5ec] text-[#5c182b] px-1 py-0.5 rounded text-[10px]">npm run build</code>, Build Output: <code className="bg-[#ffe5ec] text-[#5c182b] px-1 py-0.5 rounded text-[10px]">dist</code> (<code className="text-stone-500">public/_redirects</code> is ready).
-            </p>
-          </div>
-
           {/* Reset Demo Option */}
           <div className="pt-2 flex items-center justify-between gap-2">
             {confirmReset ? (
@@ -259,10 +311,10 @@ export const AnniversarySettingsModal: React.FC<AnniversarySettingsModalProps> =
             <button
               type="submit"
               disabled={isSaving}
-              className="px-6 py-2.5 rounded-full bg-[#fb6f92] hover:bg-[#e8557b] text-white text-xs font-semibold shadow-sm shadow-[#fb6f92]/20 disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-6 py-2.5 rounded-full bg-[#fb6f92] hover:bg-[#e8557b] active:scale-95 text-white text-xs font-bold shadow-sm shadow-[#fb6f92]/20 disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
+              <span>{isSaving ? 'Saving...' : 'Save Settings'}</span>
             </button>
           </div>
         </form>

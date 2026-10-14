@@ -27,6 +27,7 @@ export interface CoupleConfig {
   partner2: string; // "My Love"
   loveQuote: string;
   songTitle?: string;
+  theme?: string;
 }
 
 export interface TimeBreakdown {

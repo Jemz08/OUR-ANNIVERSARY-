@@ -13,6 +13,7 @@ import { UploadModal } from './components/UploadModal';
 import { AnniversarySettingsModal } from './components/AnniversarySettingsModal';
 import { UserGateModal } from './components/UserGateModal';
 import { getCategoryStyle } from './utils/categoryStyles';
+import { applyTheme, getTheme } from './utils/themeUtils';
 
 const TABS = ['counter', 'gallery', 'timeline', 'notes'];
 
@@ -24,6 +25,7 @@ export default function App() {
     partner1: 'James',
     partner2: 'Loraine',
     loveQuote: 'Every love story is beautiful, but ours is my favorite.',
+    theme: 'romantic-rose',
   });
 
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -33,6 +35,14 @@ export default function App() {
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [selectedPhotoForLightbox, setSelectedPhotoForLightbox] = useState<Photo | null>(null);
+
+  // Apply stored theme on initial load
+  useEffect(() => {
+    const cachedTheme = localStorage.getItem('oct26_active_theme');
+    if (cachedTheme) {
+      applyTheme(cachedTheme);
+    }
+  }, []);
 
   // Screen swiping references for touch navigation across tabs
   const touchStartXRef = React.useRef<number | null>(null);
@@ -65,19 +75,20 @@ export default function App() {
     return !saved;
   });
 
-  // Trigger celebration confetti using the palette colors (#ffe5ec, #ffc2d1, #ffb3c6, #ff8fab, #fb6f92)
+  // Trigger celebration confetti using the current theme's color palette
   const triggerConfetti = useCallback(() => {
     try {
+      const currentTheme = getTheme(config.theme || localStorage.getItem('oct26_active_theme') || 'romantic-rose');
       confetti({
         particleCount: 85,
         spread: 75,
         origin: { y: 0.6 },
-        colors: ['#fb6f92', '#ff8fab', '#ffb3c6', '#ffc2d1', '#ffe5ec'],
+        colors: currentTheme.colors.confetti,
       });
     } catch (e) {
       console.warn('Confetti unavailable', e);
     }
-  }, []);
+  }, [config.theme]);
 
   // Fetch initial data
   const loadData = useCallback(async () => {
@@ -90,6 +101,9 @@ export default function App() {
       setConfig(fetchedConfig);
       setPhotos(fetchedPhotos);
       setNotes(fetchedNotes);
+      if (fetchedConfig.theme) {
+        applyTheme(fetchedConfig.theme);
+      }
     } catch (err) {
       console.error('Failed to load couple data', err);
     }
@@ -132,7 +146,7 @@ export default function App() {
 
   const handleAddNote = async (newNote: { author: string; text: string }) => {
     const saved = await API.addNote(newNote);
-    setNotes((prev) => [saved, ...prev]);
+    setNotes((prev) => [saved, ...prev.filter((n) => n.id !== saved.id)]);
     triggerConfetti();
   };
 
@@ -142,8 +156,14 @@ export default function App() {
   };
 
   const handleSaveConfig = async (updated: Partial<CoupleConfig>) => {
+    if (updated.theme) {
+      applyTheme(updated.theme);
+    }
     const saved = await API.updateConfig(updated);
     setConfig(saved);
+    if (saved.theme) {
+      applyTheme(saved.theme);
+    }
   };
 
   const handleResetDemo = async () => {
@@ -213,11 +233,12 @@ export default function App() {
                 currentUserName={currentUserName}
                 onOpenUpload={() => setIsUploadOpen(true)}
                 onViewGallery={() => handleSwitchTab('gallery')}
+                onOpenNotes={() => handleSwitchTab('notes')}
                 onTriggerConfetti={triggerConfetti}
               />
 
               {/* Quick Preview of Recent Photos on the Home Page with category styles */}
-              <div className="max-w-7xl mx-auto px-3 sm:px-6 md:px-8 pt-2 sm:pt-4 pb-8 sm:pb-12">
+              <div className="max-w-7xl mx-auto px-3 sm:px-6 md:px-8 pt-2 sm:pt-4 pb-4">
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <div>
                     <h2 className="font-serif text-lg sm:text-xl font-bold text-stone-900">
@@ -293,6 +314,38 @@ export default function App() {
                     })}
                   </div>
                 )}
+              </div>
+
+              {/* Home Page Love Notes Preview & Quick Access */}
+              <div className="max-w-7xl mx-auto px-3 sm:px-6 md:px-8 pb-8 sm:pb-12">
+                <div className="bg-gradient-to-r from-[#ffe5ec]/50 via-white to-[#ffe5ec]/30 border border-[#ffc2d1] rounded-2xl sm:rounded-3xl p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xs hover:shadow-sm transition-all">
+                  <div className="flex items-center gap-3.5 text-left w-full md:w-auto">
+                    <div className="w-10 h-10 rounded-2xl bg-[#ffe5ec] border border-[#ffc2d1] text-[#fb6f92] flex items-center justify-center shrink-0">
+                      <Heart className="w-5 h-5 fill-[#fb6f92]" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif text-sm sm:text-base font-bold text-stone-900 flex items-center gap-2">
+                        <span>{notes.length > 0 ? `Latest Note from ${notes[0].author}` : 'Our Love Notes & Promises'}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ffe5ec] text-[#fb6f92] font-semibold">
+                          {notes.length} {notes.length === 1 ? 'note' : 'notes'}
+                        </span>
+                      </h3>
+                      <p className="text-xs text-stone-600 line-clamp-1 italic font-serif mt-0.5">
+                        {notes.length > 0 ? `“${notes[0].text}”` : `Leave a sweet reminder for ${config.partner2} or ${config.partner1} to find!`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                    <button
+                      onClick={() => handleSwitchTab('notes')}
+                      className="w-full md:w-auto px-4 py-2 rounded-full bg-[#fb6f92] hover:bg-[#e8557b] active:scale-95 text-white text-xs font-semibold shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Leave a Love Note</span>
+                      <span>&rarr;</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

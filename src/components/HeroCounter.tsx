@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Sparkles, ArrowRight } from 'lucide-react';
+import { Heart, Sparkles, ArrowRight, MessageSquareHeart } from 'lucide-react';
 import { CoupleConfig, TimeBreakdown } from '../types';
 import { calculateTimeElapsed, getUpcomingAnniversary, formatDatePretty } from '../utils/dateCalculations';
 
@@ -8,6 +8,7 @@ interface HeroCounterProps {
   currentUserName?: string;
   onOpenUpload: () => void;
   onViewGallery: () => void;
+  onOpenNotes?: () => void;
   onTriggerConfetti: () => void;
 }
 
@@ -16,6 +17,7 @@ export const HeroCounter: React.FC<HeroCounterProps> = ({
   currentUserName,
   onOpenUpload,
   onViewGallery,
+  onOpenNotes,
   onTriggerConfetti,
 }) => {
   const [now, setNow] = useState<Date>(new Date());
@@ -216,9 +218,18 @@ export const HeroCounter: React.FC<HeroCounterProps> = ({
               onClick={onViewGallery}
               className="w-full sm:w-auto px-5 sm:px-6 py-2.5 sm:py-3 rounded-full bg-[#ffe5ec]/80 hover:bg-[#ffe5ec] text-[#5c182b] border border-[#ffc2d1] text-xs sm:text-sm font-semibold active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>Explore Shared Gallery</span>
+              <span>Explore Gallery</span>
               <ArrowRight className="w-4 h-4" />
             </button>
+            {onOpenNotes && (
+              <button
+                onClick={onOpenNotes}
+                className="w-full sm:w-auto px-5 sm:px-6 py-2.5 sm:py-3 rounded-full bg-white hover:bg-[#fff5f7] text-[#fb6f92] border border-[#ffc2d1] text-xs sm:text-sm font-semibold active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+              >
+                <MessageSquareHeart className="w-4 h-4 text-[#fb6f92]" />
+                <span>Leave a Love Note</span>
+              </button>
+            )}
           </div>
         </div>
 

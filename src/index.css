@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Playfair+Display:ital,wght@0,400..800;1,400..800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -24,6 +25,17 @@
     --font-serif: 'Playfair Display', Georgia, serif;
     --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+
+    /* Default Romantic Rose theme variables */
+    --theme-primary: #fb6f92;
+    --theme-primary-hover: #e8557b;
+    --theme-light: #ffe5ec;
+    --theme-border: #ffc2d1;
+    --theme-surface: #fff5f7;
+    --theme-bg: #fff9fa;
+    --theme-accent: #ff8fab;
+    --theme-text-accent: #c93b61;
+    --theme-ring: rgba(251, 111, 146, 0.25);
   }
 
   html {
@@ -33,12 +45,13 @@
 
   body {
     font-family: var(--font-sans);
-    background-color: #fff9fa;
+    background-color: var(--theme-bg, #fff9fa);
     color: #2e2628;
     overflow-x: hidden;
     min-height: 100dvh;
     padding-left: env(safe-area-inset-left, 0px);
     padding-right: env(safe-area-inset-right, 0px);
+    transition: background-color 0.3s ease;
   }
 
   h1, h2, h3, .font-display {
@@ -62,11 +75,11 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #ffc2d1;
+  background: var(--theme-border, #ffc2d1);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #ffb3c6;
+  background: var(--theme-accent, #ffb3c6);
 }
 
 /* Hide scrollbar utility for horizontal tab scrollers */
@@ -163,9 +176,122 @@ button, a, [role="button"] {
   animation: heartPop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* Handwritten font vibe for Polaroid Moments */
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Playfair+Display:ital,wght@0,400..800;1,400..800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-
 .font-handwritten {
   font-family: 'Caveat', cursive;
+}
+
+/* ==========================================================================
+   DYNAMIC THEME OVERRIDES
+   When data-theme is set to sunset-romance, lavender-dream, ocean-starlight, or sage-garden,
+   these rules dynamically cascade the active theme's colors across all UI components.
+   ========================================================================== */
+
+[data-theme="sunset-romance"],
+[data-theme="lavender-dream"],
+[data-theme="ocean-starlight"],
+[data-theme="sage-garden"] {
+  /* Re-theme backgrounds */
+  & .bg-\[\#fff9fa\],
+  &.bg-\[\#fff9fa\] {
+    background-color: var(--theme-bg) !important;
+  }
+
+  & .bg-\[\#fff5f7\],
+  & .bg-blush-50 {
+    background-color: var(--theme-surface) !important;
+  }
+
+  & .bg-\[\#ffe5ec\],
+  & .bg-blush-100 {
+    background-color: var(--theme-light) !important;
+  }
+
+  & .bg-\[\#ffe5ec\]\/50,
+  & .bg-\[\#ffe5ec\]\/40 {
+    background-color: color-mix(in srgb, var(--theme-light) 45%, transparent) !important;
+  }
+
+  /* Re-theme primary buttons and accents */
+  & .bg-\[\#fb6f92\],
+  & .bg-blush-500 {
+    background-color: var(--theme-primary) !important;
+  }
+
+  & .hover\:bg-\[\#e8557b\]:hover,
+  & .hover\:bg-\[\#fb6f92\]:hover,
+  & .hover\:bg-blush-600:hover {
+    background-color: var(--theme-primary-hover) !important;
+  }
+
+  /* Re-theme borders */
+  & .border-\[\#ffc2d1\],
+  & .border-blush-200 {
+    border-color: var(--theme-border) !important;
+  }
+
+  & .border-\[\#ffc2d1\]\/80 {
+    border-color: color-mix(in srgb, var(--theme-border) 80%, transparent) !important;
+  }
+
+  & .border-\[\#ffc2d1\]\/50 {
+    border-color: color-mix(in srgb, var(--theme-border) 50%, transparent) !important;
+  }
+
+  & .border-\[\#ffb3c6\] {
+    border-color: var(--theme-accent) !important;
+  }
+
+  & .border-\[\#fb6f92\] {
+    border-color: var(--theme-primary) !important;
+  }
+
+  & .border-\[\#ffe5ec\] {
+    border-color: var(--theme-light) !important;
+  }
+
+  /* Re-theme text colors */
+  & .text-\[\#fb6f92\],
+  & .text-blush-500 {
+    color: var(--theme-primary) !important;
+  }
+
+  & .hover\:text-\[\#e8557b\]:hover,
+  & .hover\:text-\[\#fb6f92\]:hover {
+    color: var(--theme-primary-hover) !important;
+  }
+
+  & .text-\[\#ff8fab\],
+  & .text-\[\#ffb3c6\] {
+    color: var(--theme-accent) !important;
+  }
+
+  & .text-\[\#ffc2d1\] {
+    color: var(--theme-border) !important;
+  }
+
+  & .text-\[\#ffe5ec\] {
+    color: var(--theme-light) !important;
+  }
+
+  & .text-\[\#5c182b\] {
+    color: var(--theme-text-accent) !important;
+  }
+
+  /* Re-theme SVG fill */
+  & .fill-\[\#fb6f92\] {
+    fill: var(--theme-primary) !important;
+  }
+
+  & .fill-\[\#ff8fab\] {
+    fill: var(--theme-accent) !important;
+  }
+
+  /* Focus states & rings */
+  & .focus\:border-\[\#fb6f92\]:focus {
+    border-color: var(--theme-primary) !important;
+  }
+
+  & .focus\:ring-\[\#ff8fab\]\/20:focus {
+    --tw-ring-color: var(--theme-ring) !important;
+  }
 }

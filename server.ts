@@ -26,6 +26,7 @@ const DEFAULT_CONFIG = {
   partner2: 'Loraine',
   loveQuote: 'Every love story is beautiful, but ours is my favorite.',
   songTitle: 'Our Special Song',
+  theme: 'romantic-rose',
 };
 
 // Gallery starts empty so the couple can upload their own real memories first
