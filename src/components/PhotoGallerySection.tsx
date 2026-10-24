@@ -25,6 +25,7 @@ import {
   reorderGalleryPhotos,
   setMainPhotoById,
 } from '../utils/storyLogic';
+import { compressImageFile } from '../utils/imageStorage';
 import { RomanticImage } from './RomanticImage';
 
 interface PendingUploadPreview {
@@ -89,27 +90,23 @@ export const PhotoGallerySection: React.FC<PhotoGallerySectionProps> = ({
     if (!fileList || fileList.length === 0) return;
 
     Array.from(fileList).forEach((file, idx) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setPendingPreviews((prev) => [
-            ...prev,
-            {
-              id: `pending-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
-              dataUrl: reader.result as string,
-              caption: 'A cherished moment of us together, Baby.',
-              date: 'October 26, 2022 – October 26, 2026',
-              memory:
-                'Every photo of us reminds me how lucky I am to walk through life by your side.',
-              category:
-                selectedCategory === 'All'
-                  ? 'My Favorite Memories of Us'
-                  : selectedCategory,
-            },
-          ]);
-        }
-      };
-      reader.readAsDataURL(file);
+      compressImageFile(file).then((compressedUrl) => {
+        setPendingPreviews((prev) => [
+          ...prev,
+          {
+            id: `pending-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+            dataUrl: compressedUrl,
+            caption: 'A cherished moment of us together, Baby.',
+            date: 'October 26, 2022 – October 26, 2026',
+            memory:
+              'Every photo of us reminds me how lucky I am to walk through life by your side.',
+            category:
+              selectedCategory === 'All'
+                ? 'My Favorite Memories of Us'
+                : selectedCategory,
+          },
+        ]);
+      });
     });
     e.target.value = '';
   };
@@ -132,25 +129,21 @@ export const PhotoGallerySection: React.FC<PhotoGallerySectionProps> = ({
     setPendingPreviews([]);
   };
 
-  const handleReplaceSinglePhoto = (
+  const handleReplaceSinglePhoto = async (
     photoId: string,
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        onUpdatePhotos((prev) =>
-          prev.map((p) =>
-            p.id === photoId
-              ? { ...p, imageUrl: reader.result as string, isPlaceholder: false }
-              : p
-          )
-        );
-      }
-    };
-    reader.readAsDataURL(file);
+    e.target.value = '';
+    const compressedUrl = await compressImageFile(file);
+    onUpdatePhotos((prev) =>
+      prev.map((p) =>
+        p.id === photoId
+          ? { ...p, imageUrl: compressedUrl, isPlaceholder: false }
+          : p
+      )
+    );
   };
 
   const activeLightboxPhoto =

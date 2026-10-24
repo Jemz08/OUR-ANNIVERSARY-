@@ -13,6 +13,7 @@ const __dirname = path.dirname(__filename);
 const PUBLISHED_STORY_PATH = path.join(__dirname, 'published-story.json');
 const PUBLIC_DIR_PATH = path.join(__dirname, 'public');
 const PUBLIC_STORY_PATH = path.join(PUBLIC_DIR_PATH, 'published-story.json');
+const SRC_DATA_STORY_PATH = path.join(__dirname, 'src', 'data', 'publishedStory.json');
 
 const SYSTEM_INSTRUCTION = `You are a warm, sincere, emotionally honest romantic anniversary writing assistant helping James personalize his fourth anniversary website for his girlfriend, Loraine, whom he lovingly calls "Baby".
 Key facts you must always respect:
@@ -48,22 +49,21 @@ async function startServer() {
 
   // Load saved/published story for Loraine's device
   app.get('/api/story', async (_req, res) => {
-    try {
-      const raw = await fs.readFile(PUBLIC_STORY_PATH, 'utf-8');
-      const parsed = JSON.parse(raw);
-      return res.json({ found: true, ...parsed });
-    } catch {
+    for (const candidatePath of [PUBLIC_STORY_PATH, PUBLISHED_STORY_PATH, SRC_DATA_STORY_PATH]) {
       try {
-        const rawFallback = await fs.readFile(PUBLISHED_STORY_PATH, 'utf-8');
-        const parsedFallback = JSON.parse(rawFallback);
-        return res.json({ found: true, ...parsedFallback });
+        const raw = await fs.readFile(candidatePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed?.content) {
+          return res.json({ found: true, ...parsed });
+        }
       } catch {
-        return res.json({ found: false });
+        // try next
       }
     }
+    return res.json({ found: false });
   });
 
-  // Save & publish James's customized story + photos to /public/published-story.json so GitHub + Vercel + Cloud Run all bundle it automatically
+  // Save & publish James's customized story + photos to /public/published-story.json and /src/data/publishedStory.json so GitHub + Vercel + Cloud Run bundle it automatically
   app.post('/api/story/publish', async (req, res) => {
     try {
       const { content, giftModeDefault = true } = req.body || {};
@@ -79,6 +79,7 @@ async function startServer() {
       await fs.mkdir(PUBLIC_DIR_PATH, { recursive: true });
       await fs.writeFile(PUBLIC_STORY_PATH, serialized, 'utf-8');
       await fs.writeFile(PUBLISHED_STORY_PATH, serialized, 'utf-8');
+      await fs.writeFile(SRC_DATA_STORY_PATH, serialized, 'utf-8');
       return res.json({
         ok: true,
         publishedAt: payload.publishedAt,

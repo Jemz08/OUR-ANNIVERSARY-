@@ -277,3 +277,86 @@ export function mergeUploadedPhotosWithCleanText(
     },
   };
 }
+
+export function isRealUploadedPhoto(url?: string): boolean {
+  return Boolean(url && !url.startsWith('data:image/svg+xml'));
+}
+
+/**
+ * Merges two story objects so that if either one contains a real uploaded photo
+ * in a slot where the other has an SVG placeholder, the real uploaded photo is kept.
+ */
+export function combineStoriesPreservingRealPhotos(
+  primary: LoveStoryContent,
+  secondary: LoveStoryContent
+): LoveStoryContent {
+  const pickUrl = (u1?: string, u2?: string): string => {
+    if (isRealUploadedPhoto(u1)) return u1!;
+    if (isRealUploadedPhoto(u2)) return u2!;
+    return u1 || u2 || '';
+  };
+
+  // Merge extra custom gallery photos from both
+  const secondaryMap = new Map(
+    (secondary.galleryPhotos || []).map((p) => [p.id, p])
+  );
+  const mergedGallery: GalleryPhoto[] = (primary.galleryPhotos || []).map((p) => {
+    const sec = secondaryMap.get(p.id);
+    secondaryMap.delete(p.id);
+    const bestUrl = pickUrl(p.imageUrl, sec?.imageUrl);
+    return {
+      ...p,
+      imageUrl: bestUrl,
+      isPlaceholder: !isRealUploadedPhoto(bestUrl),
+    };
+  });
+  for (const leftover of secondaryMap.values()) {
+    if (isRealUploadedPhoto(leftover.imageUrl)) {
+      mergedGallery.push({
+        ...leftover,
+        isPlaceholder: false,
+      });
+    }
+  }
+
+  return {
+    ...primary,
+    chapterOne: {
+      ...primary.chapterOne,
+      imageUrl: pickUrl(
+        primary.chapterOne?.imageUrl,
+        secondary.chapterOne?.imageUrl
+      ),
+    },
+    chapterTwo: {
+      ...primary.chapterTwo,
+      imageUrl: pickUrl(
+        primary.chapterTwo?.imageUrl,
+        secondary.chapterTwo?.imageUrl
+      ),
+    },
+    chapterFour: {
+      ...primary.chapterFour,
+      imageUrl: pickUrl(
+        primary.chapterFour?.imageUrl,
+        secondary.chapterFour?.imageUrl
+      ),
+    },
+    chapterThree: {
+      ...primary.chapterThree,
+      memories: primary.chapterThree.memories.map((m, idx) => {
+        const secMem =
+          secondary.chapterThree?.memories?.find((sm) => sm.id === m.id) ||
+          secondary.chapterThree?.memories?.[idx];
+        const bestUrl = pickUrl(m.imageUrl, secMem?.imageUrl);
+        return {
+          ...m,
+          imageUrl: bestUrl,
+          isPlaceholder: !isRealUploadedPhoto(bestUrl),
+        };
+      }),
+    },
+    galleryPhotos: mergedGallery,
+  };
+}
+

@@ -16,11 +16,18 @@ import {
   INITIAL_LOVE_STORY_CONTENT,
   LoveStoryContent,
 } from './data/loveStoryData';
+import publishedStoryBundle from './data/publishedStory.json';
 import {
   calculateAnniversaryMetrics,
+  combineStoriesPreservingRealPhotos,
   getMainAnniversaryPhoto,
   mergeUploadedPhotosWithCleanText,
 } from './utils/storyLogic';
+import {
+  loadStoryFromIndexedDB,
+  optimizeAllPhotosInStory,
+  saveStoryToIndexedDB,
+} from './utils/imageStorage';
 import { romanticPiano } from './utils/pianoAudio';
 import { OpeningScreen } from './components/OpeningScreen';
 import { TimelineSection } from './components/TimelineSection';
@@ -35,6 +42,36 @@ import { StudioAndAssistantModal } from './components/StudioAndAssistantModal';
 const STORAGE_KEY = 'loraine_fourth_anniversary_v1';
 const OPENED_NOTES_KEY = 'loraine_opened_notes_v1';
 const GIFT_MODE_KEY = 'loraine_gift_mode_v1';
+
+function getInitialBundledStory(): LoveStoryContent {
+  const bundleObj = publishedStoryBundle as unknown as {
+    content?: LoveStoryContent;
+  };
+  let base = INITIAL_LOVE_STORY_CONTENT;
+  if (bundleObj?.content) {
+    base = combineStoriesPreservingRealPhotos(
+      mergeUploadedPhotosWithCleanText(
+        bundleObj.content,
+        INITIAL_LOVE_STORY_CONTENT
+      ),
+      base
+    );
+  }
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved) as LoveStoryContent;
+      const cleanedLocal = mergeUploadedPhotosWithCleanText(
+        parsed,
+        INITIAL_LOVE_STORY_CONTENT
+      );
+      base = combineStoriesPreservingRealPhotos(cleanedLocal, base);
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return base;
+}
 
 export default function App() {
   const [hasEnteredStory, setHasEnteredStory] = useState<boolean>(() => {
@@ -51,9 +88,10 @@ export default function App() {
       if (params.get('gift') === '1') return true;
       if (params.get('edit') === '1') return false;
       try {
-        return localStorage.getItem(GIFT_MODE_KEY) === 'true';
+        const storedGift = localStorage.getItem(GIFT_MODE_KEY);
+        if (storedGift !== null) return storedGift === 'true';
       } catch {
-        return false;
+        // ignore
       }
     }
     return false;
@@ -69,21 +107,9 @@ export default function App() {
     romanticPiano.getTrackName()
   );
 
-  const [content, setContent] = useState<LoveStoryContent>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as LoveStoryContent;
-        return mergeUploadedPhotosWithCleanText(
-          parsed,
-          INITIAL_LOVE_STORY_CONTENT
-        );
-      }
-    } catch {
-      // Fallback to initial content
-    }
-    return INITIAL_LOVE_STORY_CONTENT;
-  });
+  const [content, setContent] = useState<LoveStoryContent>(
+    getInitialBundledStory
+  );
 
   const [openedNoteIds, setOpenedNoteIds] = useState<number[]>(() => {
     try {
@@ -97,8 +123,14 @@ export default function App() {
     return [];
   });
 
-  const [lastPublishedAt, setLastPublishedAt] = useState<string | null>(null);
+  const [lastPublishedAt, setLastPublishedAt] = useState<string | null>(() => {
+    const bundleObj = publishedStoryBundle as unknown as {
+      publishedAt?: string;
+    };
+    return bundleObj?.publishedAt || null;
+  });
   const [justPublishedToast, setJustPublishedToast] = useState<boolean>(false);
+  const [isSavingToServer, setIsSavingToServer] = useState<boolean>(false);
 
   const [studioModalState, setStudioModalState] = useState<{
     isOpen: boolean;
@@ -115,7 +147,14 @@ export default function App() {
       storyToSave: LoveStoryContent,
       giftModeDefault = true
     ): Promise<{ ok: boolean; publishedAt?: string; error?: string }> => {
+      setIsSavingToServer(true);
       try {
+        await saveStoryToIndexedDB(storyToSave);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(storyToSave));
+        } catch {
+          // IndexedDB and server handle large payloads
+        }
         const res = await fetch('/api/story/publish', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -125,82 +164,115 @@ export default function App() {
           }),
         });
         const data = await res.json();
+        setIsSavingToServer(false);
         if (data.ok) {
           setLastPublishedAt(data.publishedAt);
           return { ok: true, publishedAt: data.publishedAt };
         }
         return { ok: false, error: data.error || 'Could not publish story' };
       } catch {
-        return { ok: false, error: 'Network error while saving story' };
+        setIsSavingToServer(false);
+        return { ok: false, error: 'Saved locally in browser' };
       }
     },
     []
   );
 
-  // On initial mount:
-  // - If James has uploaded photos in localStorage, merge with clean text and auto-sync to the server (/public/published-story.json).
-  // - If a visitor (like Loraine on Vercel or Cloud Run) opens the link, load from /api/story or static /published-story.json!
+  // Wrapper for all photo uploads / changes: immediately updates state AND persists to IndexedDB + Server (/public/published-story.json & /src/data/publishedStory.json)
+  const handleUserUpdateContent = useCallback(
+    (updater: (prev: LoveStoryContent) => LoveStoryContent) => {
+      setContent((prev) => {
+        const next = updater(prev);
+        void publishContentToServer(next, true);
+        return next;
+      });
+    },
+    [publishContentToServer]
+  );
+
+  // On initial mount: combine photos from Bundled JSON + Server + IndexedDB + LocalStorage so NO uploaded photo is ever lost,
+  // and optimize any oversized photos (>320KB) so all 15+ photos stay lightweight.
   useEffect(() => {
     let isMounted = true;
-    const rawSaved = localStorage.getItem(STORAGE_KEY);
-    const hasLocalCustomizations = Boolean(rawSaved);
 
-    async function loadRemoteOrStaticStory() {
+    async function hydrateAndOptimizeAllSources() {
+      let combined = getInitialBundledStory();
+
+      // 1. Check IndexedDB
+      const idbStory = await loadStoryFromIndexedDB();
+      if (idbStory) {
+        const cleanedIdb = mergeUploadedPhotosWithCleanText(
+          idbStory,
+          INITIAL_LOVE_STORY_CONTENT
+        );
+        combined = combineStoriesPreservingRealPhotos(cleanedIdb, combined);
+      }
+
+      // 2. Check /api/story or static /published-story.json
+      let remoteGiftDefault: boolean | undefined;
       try {
         const apiRes = await fetch('/api/story');
         if (apiRes.ok) {
           const data = await apiRes.json();
-          if (data?.found && data?.content) return data;
+          if (data?.found && data?.content) {
+            const cleanedServer = mergeUploadedPhotosWithCleanText(
+              data.content as LoveStoryContent,
+              INITIAL_LOVE_STORY_CONTENT
+            );
+            combined = combineStoriesPreservingRealPhotos(
+              combined,
+              cleanedServer
+            );
+            remoteGiftDefault = data.giftModeDefault;
+            if (data.publishedAt && isMounted) {
+              setLastPublishedAt(data.publishedAt);
+            }
+          }
         }
       } catch {
-        // Fallback to static /published-story.json (Vercel / Netlify / GitHub Pages)
-      }
-      try {
-        const staticRes = await fetch('/published-story.json');
-        if (staticRes.ok) {
-          const staticData = await staticRes.json();
-          if (staticData?.content) {
-            return { found: true, ...staticData };
-          }
-          if (staticData?.groomName && Array.isArray(staticData?.galleryPhotos)) {
-            return { found: true, content: staticData, giftModeDefault: true };
-          }
-        }
-      } catch {
-        // No static published-story.json yet
-      }
-      return { found: false };
-    }
-
-    loadRemoteOrStaticStory().then((serverData) => {
-      if (!isMounted) return;
-      if (hasLocalCustomizations && rawSaved) {
+        // Fallback to static /published-story.json on Vercel
         try {
-          const localParsed = JSON.parse(rawSaved) as LoveStoryContent;
-          const merged = mergeUploadedPhotosWithCleanText(
-            localParsed,
-            INITIAL_LOVE_STORY_CONTENT
-          );
-          setContent(merged);
-          publishContentToServer(merged, true);
+          const staticRes = await fetch('/published-story.json');
+          if (staticRes.ok) {
+            const staticData = await staticRes.json();
+            const rawStory = staticData?.content || staticData;
+            if (rawStory?.groomName) {
+              const cleanedStatic = mergeUploadedPhotosWithCleanText(
+                rawStory as LoveStoryContent,
+                INITIAL_LOVE_STORY_CONTENT
+              );
+              combined = combineStoriesPreservingRealPhotos(
+                combined,
+                cleanedStatic
+              );
+              remoteGiftDefault = staticData?.giftModeDefault ?? true;
+            }
+          }
         } catch {
           // ignore
         }
-      } else if (serverData?.found && serverData?.content) {
-        const mergedServer = mergeUploadedPhotosWithCleanText(
-          serverData.content as LoveStoryContent,
-          INITIAL_LOVE_STORY_CONTENT
-        );
-        setContent(mergedServer);
-        if (serverData.publishedAt) {
-          setLastPublishedAt(serverData.publishedAt);
-        }
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('edit') !== '1' && serverData.giftModeDefault !== false) {
-          setIsGiftMode(true);
-        }
       }
-    });
+
+      // 3. Optimize any oversized photos (> 320KB) so all 15+ photos fit easily in localStorage & GitHub/Vercel
+      const { optimized } = await optimizeAllPhotosInStory(combined);
+
+      if (!isMounted) return;
+      setContent(optimized);
+      void publishContentToServer(optimized, true);
+
+      // If a visitor opens the link for the first time (no local GIFT_MODE_KEY set), respect gift mode if requested via URL
+      const params = new URLSearchParams(window.location.search);
+      if (
+        params.get('edit') !== '1' &&
+        localStorage.getItem(GIFT_MODE_KEY) === null &&
+        !localStorage.getItem(STORAGE_KEY) &&
+        remoteGiftDefault
+      ) {
+        setIsGiftMode(true);
+      }
+    }
+
+    void hydrateAndOptimizeAllSources();
 
     return () => {
       isMounted = false;
@@ -208,10 +280,11 @@ export default function App() {
   }, [publishContentToServer]);
 
   useEffect(() => {
+    void saveStoryToIndexedDB(content);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(content));
     } catch {
-      // Ignore quota errors if very large base64 images were added
+      // IndexedDB and server handle storage if localStorage is full
     }
   }, [content]);
 
@@ -233,10 +306,12 @@ export default function App() {
   };
 
   const handleQuickLockInAndPublish = async () => {
-    const res = await publishContentToServer(content, true);
+    const { optimized } = await optimizeAllPhotosInStory(content);
+    setContent(optimized);
+    const res = await publishContentToServer(optimized, true);
     if (res.ok) {
       setJustPublishedToast(true);
-      window.setTimeout(() => setJustPublishedToast(false), 4000);
+      window.setTimeout(() => setJustPublishedToast(false), 4500);
     }
   };
 
@@ -497,7 +572,12 @@ export default function App() {
                   {justPublishedToast ? (
                     <>
                       <Check className="w-3.5 h-3.5" />
-                      <span>Saved for Loraine’s Link!</span>
+                      <span>Locked In &amp; Saved to Project!</span>
+                    </>
+                  ) : isSavingToServer ? (
+                    <>
+                      <Share2 className="w-3.5 h-3.5 animate-pulse" />
+                      <span>Auto-Saving Photo...</span>
                     </>
                   ) : (
                     <>
@@ -604,7 +684,7 @@ export default function App() {
           content={content}
           metrics={metrics}
           isGiftMode={isGiftMode}
-          onUpdateContent={setContent}
+          onUpdateContent={handleUserUpdateContent}
           onInspectMemoryPhotoWithAI={handleInspectPhotoWithAI}
         />
 
@@ -613,7 +693,7 @@ export default function App() {
           photos={content.galleryPhotos}
           isGiftMode={isGiftMode}
           onUpdatePhotos={(updater) =>
-            setContent((prev) => ({
+            handleUserUpdateContent((prev) => ({
               ...prev,
               galleryPhotos: updater(prev.galleryPhotos),
             }))
@@ -677,7 +757,7 @@ export default function App() {
             INITIAL_LOVE_STORY_CONTENT
           );
           setContent(merged);
-          publishContentToServer(merged, true);
+          void publishContentToServer(merged, true);
         }}
         onResetToDefaults={() => {
           setContent(INITIAL_LOVE_STORY_CONTENT);

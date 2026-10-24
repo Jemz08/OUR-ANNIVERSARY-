@@ -5,6 +5,7 @@ import {
   LoveStoryContent,
 } from '../data/loveStoryData';
 import { StoryDurationMetrics } from '../utils/storyLogic';
+import { compressImageFile } from '../utils/imageStorage';
 import { RomanticImage } from './RomanticImage';
 
 interface TimelineSectionProps {
@@ -22,19 +23,15 @@ export const TimelineSection: React.FC<TimelineSectionProps> = ({
   onUpdateContent,
   onInspectMemoryPhotoWithAI,
 }) => {
-  const handleFileUpload = (
+  const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     onLoaded: (dataUrl: string) => void
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        onLoaded(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    e.target.value = '';
+    const compressedDataUrl = await compressImageFile(file);
+    onLoaded(compressedDataUrl);
   };
 
   const handleUpdateChapterThreeMemory = (
