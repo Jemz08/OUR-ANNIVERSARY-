@@ -109,7 +109,7 @@ export const SealedSurpriseSection: React.FC<SealedSurpriseSectionProps> = ({
               className="mx-auto max-w-md h-24 border-b border-[#D8B16D]/40 mb-8 flex flex-col items-center justify-end pb-4"
             >
               <span className="text-xs tracking-[0.3em] uppercase text-[#D8B16D]/90">
-                For Baby Loraine · October 26, 2026
+                For Baby · October 26, 2026
               </span>
             </div>
 
@@ -292,7 +292,7 @@ export const SealedSurpriseSection: React.FC<SealedSurpriseSectionProps> = ({
                 <div className="max-w-2xl mx-auto p-6 rounded-2xl bg-[#4A1025] text-[#FFF7F0] border border-[#D8B16D] text-left shadow-lg">
                   <div className="mb-3">
                     <span className="text-xs uppercase tracking-[0.2em] text-[#D8B16D]">
-                      One Final Personal Message From James to Loraine
+                      One Final Personal Message From Me to You
                     </span>
                   </div>
                   <p className="font-serif-editorial italic text-xl sm:text-2xl text-[#FFF7F0] leading-relaxed">
