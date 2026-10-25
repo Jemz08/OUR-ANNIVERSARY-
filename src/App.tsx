@@ -25,6 +25,7 @@ import {
   applyQuickUploadToSlot,
   calculateAnniversaryMetrics,
   combineStoriesPreservingRealPhotos,
+  ensureAllPhotoSlotsHaveRealPhotos,
   getMainAnniversaryPhoto,
   getPhotoSyncSummary,
   mergeUploadedPhotosWithCleanText,
@@ -79,7 +80,7 @@ function getInitialBundledStory(): LoveStoryContent {
   } catch {
     // Ignore parse errors
   }
-  return base;
+  return ensureAllPhotoSlotsHaveRealPhotos(base, bundleObj?.content);
 }
 
 function isStaticProductionHost(): boolean {
@@ -438,8 +439,15 @@ export default function App() {
         // ignore
       }
 
-      // 3. Optimize any oversized photos (> 320KB) so all 15+ photos fit easily in localStorage & GitHub/Vercel
-      const { optimized } = await optimizeAllPhotosInStory(combined);
+      // 3. Ensure all 15 photo slots are populated with real couple photos and optimize oversized photos
+      const bundleObj = publishedStoryBundle as unknown as {
+        content?: LoveStoryContent;
+      };
+      const guaranteedFifteen = ensureAllPhotoSlotsHaveRealPhotos(
+        combined,
+        bundleObj?.content
+      );
+      const { optimized } = await optimizeAllPhotosInStory(guaranteedFifteen);
 
       if (!isMounted) return;
       hasCompletedInitialHydrationRef.current = true;

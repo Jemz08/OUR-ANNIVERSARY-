@@ -599,5 +599,91 @@ export function verifyRemoteStoryMatchesLocal(
   };
 }
 
+/**
+ * Ensures that all 15 photo frames (Chapter 1, Chapter 2, 6 Chapter 3 Memories,
+ * Chapter 4, and 6 Gallery Keepsakes) are populated with real uploaded photos
+ * whenever a bundled fallback or pool of real couple photos is available.
+ */
+export function ensureAllPhotoSlotsHaveRealPhotos(
+  content: LoveStoryContent,
+  bundledFallback?: LoveStoryContent
+): LoveStoryContent {
+  let merged = bundledFallback
+    ? combineStoriesPreservingRealPhotos(content, bundledFallback)
+    : content;
 
+  const pool: string[] = [];
+  const collect = (url?: string) => {
+    if (isRealUploadedPhoto(url) && !pool.includes(url!)) {
+      pool.push(url!);
+    }
+  };
 
+  collect(merged.galleryPhotos?.[0]?.imageUrl);
+  collect(merged.galleryPhotos?.[3]?.imageUrl);
+  collect(merged.chapterThree?.memories?.[0]?.imageUrl);
+  collect(merged.chapterOne?.imageUrl);
+  collect(merged.chapterTwo?.imageUrl);
+  (merged.chapterThree?.memories || []).forEach((m) => collect(m.imageUrl));
+  collect(merged.chapterFour?.imageUrl);
+  (merged.galleryPhotos || []).forEach((g) => collect(g.imageUrl));
+
+  if (pool.length === 0) {
+    return merged;
+  }
+
+  let poolIdx = 0;
+  const nextFromPool = (preferredIndex?: number): string => {
+    if (
+      typeof preferredIndex === 'number' &&
+      preferredIndex >= 0 &&
+      preferredIndex < pool.length
+    ) {
+      return pool[preferredIndex];
+    }
+    const chosen = pool[poolIdx % pool.length];
+    poolIdx++;
+    return chosen;
+  };
+
+  return {
+    ...merged,
+    chapterOne: {
+      ...merged.chapterOne,
+      imageUrl: isRealUploadedPhoto(merged.chapterOne?.imageUrl)
+        ? merged.chapterOne.imageUrl
+        : nextFromPool(0),
+    },
+    chapterTwo: {
+      ...merged.chapterTwo,
+      imageUrl: isRealUploadedPhoto(merged.chapterTwo?.imageUrl)
+        ? merged.chapterTwo.imageUrl
+        : nextFromPool(1),
+    },
+    chapterFour: {
+      ...merged.chapterFour,
+      imageUrl: isRealUploadedPhoto(merged.chapterFour?.imageUrl)
+        ? merged.chapterFour.imageUrl
+        : nextFromPool(0),
+    },
+    chapterThree: {
+      ...merged.chapterThree,
+      memories: (merged.chapterThree?.memories || []).map((m, idx) => {
+        const hasReal = isRealUploadedPhoto(m.imageUrl);
+        return {
+          ...m,
+          imageUrl: hasReal ? m.imageUrl : nextFromPool(idx % pool.length),
+          isPlaceholder: false,
+        };
+      }),
+    },
+    galleryPhotos: (merged.galleryPhotos || []).map((g, idx) => {
+      const hasReal = isRealUploadedPhoto(g.imageUrl);
+      return {
+        ...g,
+        imageUrl: hasReal ? g.imageUrl : nextFromPool((idx + 2) % pool.length),
+        isPlaceholder: false,
+      };
+    }),
+  };
+}

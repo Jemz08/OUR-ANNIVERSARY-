@@ -114,18 +114,37 @@ export const PhotoGallerySection: React.FC<PhotoGallerySectionProps> = ({
   const commitPendingUploads = () => {
     if (pendingPreviews.length === 0) return;
     const rotations = [-1.6, 1.4, -1.1, 1.8, -1.3];
-    const newItems: GalleryPhoto[] = pendingPreviews.map((item, i) => ({
-      id: `gal-${Date.now()}-${i}`,
-      category: item.category,
-      imageUrl: item.dataUrl,
-      caption: item.caption || 'A cherished moment together',
-      date: item.date || undefined,
-      memory: item.memory || undefined,
-      isMainAnniversaryPhoto: false,
-      isPlaceholder: false,
-      rotationDeg: rotations[i % rotations.length],
-    }));
-    onUpdatePhotos((prev) => [...newItems, ...prev]);
+    onUpdatePhotos((prev) => {
+      const updated = [...prev];
+      const remainingToPrepend: GalleryPhoto[] = [];
+
+      pendingPreviews.forEach((item, i) => {
+        const placeholderIdx = updated.findIndex(
+          (p) => p.isPlaceholder || p.imageUrl.startsWith('data:image/svg+xml')
+        );
+        if (placeholderIdx !== -1) {
+          updated[placeholderIdx] = {
+            ...updated[placeholderIdx],
+            imageUrl: item.dataUrl,
+            isPlaceholder: false,
+          };
+        } else {
+          remainingToPrepend.push({
+            id: `gal-${Date.now()}-${i}`,
+            category: item.category,
+            imageUrl: item.dataUrl,
+            caption: item.caption || 'A cherished moment together',
+            date: item.date || undefined,
+            memory: item.memory || undefined,
+            isMainAnniversaryPhoto: false,
+            isPlaceholder: false,
+            rotationDeg: rotations[i % rotations.length],
+          });
+        }
+      });
+
+      return [...remainingToPrepend, ...updated];
+    });
     setPendingPreviews([]);
   };
 

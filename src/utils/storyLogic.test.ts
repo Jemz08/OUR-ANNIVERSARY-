@@ -164,4 +164,22 @@ test('verifyRemoteStoryMatchesLocal detects mismatched remote slots and verifies
   assert.ok(computeStoryPhotoSignature(localWithPhoto).includes('mem-2=real:'));
 });
 
+test('ensureAllPhotoSlotsHaveRealPhotos fills any remaining placeholder slots so all 15 slots have real photos', async () => {
+  const { ensureAllPhotoSlotsHaveRealPhotos } = await import('./storyLogic');
+  let partial = applyQuickUploadToSlot(
+    INITIAL_LOVE_STORY_CONTENT,
+    'gal-1',
+    'data:image/jpeg;base64,COUPLE_MAIN_PHOTO'
+  );
+  partial = applyQuickUploadToSlot(
+    partial,
+    'mem-1',
+    'data:image/jpeg;base64,HAPPIEST_NIGHT_PHOTO'
+  );
 
+  const filled = ensureAllPhotoSlotsHaveRealPhotos(partial);
+  const summary = getPhotoSyncSummary(filled);
+  assert.equal(summary.totalSlots, 15);
+  assert.equal(summary.realCount, 15);
+  assert.equal(summary.missingSlots.length, 0);
+});
