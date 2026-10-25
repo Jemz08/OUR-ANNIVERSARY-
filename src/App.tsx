@@ -11,6 +11,8 @@ import {
   Camera,
   Share2,
   Check,
+  Upload,
+  FileUp,
 } from 'lucide-react';
 import {
   INITIAL_LOVE_STORY_CONTENT,
@@ -18,12 +20,16 @@ import {
 } from './data/loveStoryData';
 import publishedStoryBundle from './data/publishedStory.json';
 import {
+  applyQuickUploadToSlot,
   calculateAnniversaryMetrics,
   combineStoriesPreservingRealPhotos,
   getMainAnniversaryPhoto,
+  getPhotoSyncSummary,
   mergeUploadedPhotosWithCleanText,
+  validateImportedStoryContent,
 } from './utils/storyLogic';
 import {
+  compressImageFile,
   loadStoryFromIndexedDB,
   optimizeAllPhotosInStory,
   saveStoryToIndexedDB,
@@ -73,6 +79,16 @@ function getInitialBundledStory(): LoveStoryContent {
   return base;
 }
 
+function isStaticProductionHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return (
+    host.endsWith('.vercel.app') ||
+    host.endsWith('.netlify.app') ||
+    host.endsWith('.github.io')
+  );
+}
+
 export default function App() {
   const [hasEnteredStory, setHasEnteredStory] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -87,6 +103,8 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (params.get('gift') === '1') return true;
       if (params.get('edit') === '1') return false;
+      // On Vercel / production links, always default to Loraine's pure Gift View!
+      if (isStaticProductionHost()) return true;
       try {
         const storedGift = localStorage.getItem(GIFT_MODE_KEY);
         if (storedGift !== null) return storedGift === 'true';
@@ -131,6 +149,9 @@ export default function App() {
   });
   const [justPublishedToast, setJustPublishedToast] = useState<boolean>(false);
   const [isSavingToServer, setIsSavingToServer] = useState<boolean>(false);
+  const [importStatusBanner, setImportStatusBanner] = useState<string | null>(
+    null
+  );
 
   const [studioModalState, setStudioModalState] = useState<{
     isOpen: boolean;
@@ -147,14 +168,17 @@ export default function App() {
       storyToSave: LoveStoryContent,
       giftModeDefault = true
     ): Promise<{ ok: boolean; publishedAt?: string; error?: string }> => {
+      await saveStoryToIndexedDB(storyToSave);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(storyToSave));
+      } catch {
+        // IndexedDB and server handle large payloads
+      }
+      if (isStaticProductionHost()) {
+        return { ok: true, publishedAt: new Date().toISOString() };
+      }
       setIsSavingToServer(true);
       try {
-        await saveStoryToIndexedDB(storyToSave);
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(storyToSave));
-        } catch {
-          // IndexedDB and server handle large payloads
-        }
         const res = await fetch('/api/story/publish', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -167,6 +191,11 @@ export default function App() {
         setIsSavingToServer(false);
         if (data.ok) {
           setLastPublishedAt(data.publishedAt);
+          if (data.content) {
+            setContent((prev) =>
+              combineStoriesPreservingRealPhotos(prev, data.content)
+            );
+          }
           return { ok: true, publishedAt: data.publishedAt };
         }
         return { ok: false, error: data.error || 'Could not publish story' };
@@ -183,7 +212,9 @@ export default function App() {
     (updater: (prev: LoveStoryContent) => LoveStoryContent) => {
       setContent((prev) => {
         const next = updater(prev);
-        void publishContentToServer(next, true);
+        window.setTimeout(() => {
+          void publishContentToServer(next, true);
+        }, 0);
         return next;
       });
     },
@@ -315,8 +346,58 @@ export default function App() {
     }
   };
 
+  const handleQuickSlotFileUpload = async (
+    slotKey: string,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    const compressedDataUrl = await compressImageFile(file);
+    handleUserUpdateContent((prev) =>
+      applyQuickUploadToSlot(prev, slotKey, compressedDataUrl)
+    );
+  };
+
+  const handleQuickImportJsonPackage = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const raw = JSON.parse(String(reader.result || '{}'));
+        const validation = validateImportedStoryContent(raw);
+        if (validation.valid && validation.data) {
+          const cleaned = mergeUploadedPhotosWithCleanText(
+            validation.data,
+            INITIAL_LOVE_STORY_CONTENT
+          );
+          const merged = combineStoriesPreservingRealPhotos(cleaned, content);
+          const { optimized } = await optimizeAllPhotosInStory(merged);
+          setContent(optimized);
+          await publishContentToServer(optimized, true);
+          const summary = getPhotoSyncSummary(optimized);
+          setImportStatusBanner(
+            `Imported & synced! ${summary.realCount} / ${summary.totalSlots} real photos are now saved into the GitHub/Vercel project.`
+          );
+        }
+      } catch {
+        setImportStatusBanner('Could not parse JSON file.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const metrics = calculateAnniversaryMetrics('2026-10-26T00:00:00Z');
   const mainPhoto = getMainAnniversaryPhoto(content.galleryPhotos);
+  const photoSyncSummary = getPhotoSyncSummary(content);
+  const showEditToggleInGiftMode =
+    !isStaticProductionHost() ||
+    (typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('edit') === '1');
 
   const handleStartMusicGesture = async (enableMusic: boolean) => {
     if (enableMusic) {
@@ -553,15 +634,17 @@ export default function App() {
           {/* Photo Mode vs Loraine's Gift View Controls */}
           <div className="flex flex-wrap items-center gap-2">
             {isGiftMode ? (
-              <button
-                type="button"
-                onClick={() => handleToggleGiftMode(false)}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#270812]/60 hover:bg-[#4A1025] border border-[#D8B16D]/25 text-[#F1D6DC]/75 hover:text-[#FFF7F0] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                title="Switch back to Photo Upload Mode"
-              >
-                <Camera className="w-3 h-3 text-[#D8B16D]" />
-                <span>Photo Upload Mode (James)</span>
-              </button>
+              showEditToggleInGiftMode && (
+                <button
+                  type="button"
+                  onClick={() => handleToggleGiftMode(false)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#270812]/60 hover:bg-[#4A1025] border border-[#D8B16D]/25 text-[#F1D6DC]/75 hover:text-[#FFF7F0] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                  title="Switch back to Photo Upload Mode"
+                >
+                  <Camera className="w-3 h-3 text-[#D8B16D]" />
+                  <span>Photo Upload Mode (James)</span>
+                </button>
+              )
             ) : (
               <>
                 <button
@@ -676,6 +759,80 @@ export default function App() {
           </a>
         </nav>
       </div>
+
+      {/* Cross-Device Photo Sync & Missing Photos Quick-Uploader (Visible Only in James's Photo Upload Mode) */}
+      {!isGiftMode && (
+        <div className="bg-[#2D0816] border-b border-[#D8B16D]/30 px-6 py-4">
+          <div className="max-w-6xl mx-auto flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md bg-[#D8B16D] text-[#270812] font-mono-tabular text-xs font-bold">
+                  {photoSyncSummary.realCount} / {photoSyncSummary.totalSlots}{' '}
+                  Real Photos Saved
+                </span>
+                <span className="text-xs sm:text-sm font-medium text-[#FFF7F0]">
+                  {photoSyncSummary.missingSlots.length === 0
+                    ? 'All 15 photo frames are saved in this project! Push to GitHub so Vercel updates all phones.'
+                    : `${photoSyncSummary.missingSlots.length} frame${
+                        photoSyncSummary.missingSlots.length > 1 ? 's' : ''
+                      } still need your photo here in AI Studio before pushing to GitHub:`}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4A1025] hover:bg-[#611530] border border-[#D8B16D]/50 text-xs text-[#FFF7F0] font-medium cursor-pointer transition-colors">
+                  <FileUp className="w-3.5 h-3.5 text-[#D8B16D]" />
+                  <span>Import Chrome Backup (.json)</span>
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={handleQuickImportJsonPackage}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {importStatusBanner && (
+              <p className="text-xs text-emerald-300 font-medium">
+                ✓ {importStatusBanner}
+              </p>
+            )}
+
+            {photoSyncSummary.missingSlots.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                {photoSyncSummary.missingSlots.map((slot) => (
+                  <div
+                    key={slot.slotKey}
+                    className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-[#4A1025]/60 border border-[#D8B16D]/40"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-wider text-[#D8B16D] font-semibold truncate">
+                        {slot.sectionLabel}
+                      </p>
+                      <p className="text-xs text-[#FFF7F0] truncate">
+                        {slot.title}
+                      </p>
+                    </div>
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#D8B16D] hover:bg-[#E7C686] text-[#270812] text-xs font-semibold cursor-pointer shrink-0 transition-colors">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) =>
+                          handleQuickSlotFileUpload(slot.slotKey, e)
+                        }
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Content Flow */}
       <main>

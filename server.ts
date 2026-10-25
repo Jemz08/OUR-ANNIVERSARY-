@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
+import { combineStoriesPreservingRealPhotos } from './src/utils/storyLogic';
+import { LoveStoryContent } from './src/data/loveStoryData';
 
 dotenv.config();
 
@@ -40,6 +42,21 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
+async function readExistingPublishedContent(): Promise<LoveStoryContent | null> {
+  for (const candidatePath of [PUBLIC_STORY_PATH, PUBLISHED_STORY_PATH, SRC_DATA_STORY_PATH]) {
+    try {
+      const raw = await fs.readFile(candidatePath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed?.content) {
+        return parsed.content as LoveStoryContent;
+      }
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -70,8 +87,16 @@ async function startServer() {
       if (!content || typeof content !== 'object') {
         return res.status(400).json({ error: 'Invalid story content payload.' });
       }
+      const existingContent = await readExistingPublishedContent();
+      const mergedContent = existingContent
+        ? combineStoriesPreservingRealPhotos(
+            content as LoveStoryContent,
+            existingContent
+          )
+        : (content as LoveStoryContent);
+
       const payload = {
-        content,
+        content: mergedContent,
         giftModeDefault: Boolean(giftModeDefault),
         publishedAt: new Date().toISOString(),
       };
@@ -83,6 +108,7 @@ async function startServer() {
       return res.json({
         ok: true,
         publishedAt: payload.publishedAt,
+        content: mergedContent,
       });
     } catch (err) {
       return res.status(500).json({

@@ -120,7 +120,7 @@ export const TwelveLoveNotesSection: React.FC<TwelveLoveNotesSectionProps> = ({
                   <p className="text-xs text-[#F1D6DC]/75 italic">
                     {hasBeenRead
                       ? 'You have read this note. Click below whenever you want to read it again, Baby.'
-                      : 'A sealed note from James, waiting to be opened.'}
+                      : 'A sealed note (From Me to You), waiting to be opened.'}
                   </p>
                 )}
               </div>

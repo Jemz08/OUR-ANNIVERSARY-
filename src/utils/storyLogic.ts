@@ -312,10 +312,21 @@ export function combineStoriesPreservingRealPhotos(
   });
   for (const leftover of secondaryMap.values()) {
     if (isRealUploadedPhoto(leftover.imageUrl)) {
-      mergedGallery.push({
-        ...leftover,
-        isPlaceholder: false,
-      });
+      const placeholderIdx = mergedGallery.findIndex(
+        (g) => !isRealUploadedPhoto(g.imageUrl)
+      );
+      if (placeholderIdx !== -1) {
+        mergedGallery[placeholderIdx] = {
+          ...mergedGallery[placeholderIdx],
+          imageUrl: leftover.imageUrl,
+          isPlaceholder: false,
+        };
+      } else {
+        mergedGallery.push({
+          ...leftover,
+          isPlaceholder: false,
+        });
+      }
     }
   }
 
@@ -359,4 +370,124 @@ export function combineStoriesPreservingRealPhotos(
     galleryPhotos: mergedGallery,
   };
 }
+
+export interface MissingPhotoSlot {
+  slotKey: string;
+  sectionLabel: string;
+  title: string;
+}
+
+export function getPhotoSyncSummary(content: LoveStoryContent): {
+  realCount: number;
+  totalSlots: number;
+  missingSlots: MissingPhotoSlot[];
+} {
+  const missingSlots: MissingPhotoSlot[] = [];
+  let realCount = 0;
+
+  const checkSlot = (
+    url: string | undefined,
+    slotKey: string,
+    sectionLabel: string,
+    title: string
+  ) => {
+    if (isRealUploadedPhoto(url)) {
+      realCount++;
+    } else {
+      missingSlots.push({ slotKey, sectionLabel, title });
+    }
+  };
+
+  checkSlot(
+    content.chapterOne?.imageUrl,
+    'chapterOne',
+    'Chapter 1',
+    'June 15–20, 2016 (The Beginning)'
+  );
+  checkSlot(
+    content.chapterTwo?.imageUrl,
+    'chapterTwo',
+    'Chapter 2',
+    'October 26, 2022 (The Day We Became Us)'
+  );
+
+  (content.chapterThree?.memories || []).forEach((mem, idx) => {
+    checkSlot(
+      mem.imageUrl,
+      mem.id,
+      `Chapter 3 · Frame #${idx + 1}`,
+      mem.label
+    );
+  });
+
+  checkSlot(
+    content.chapterFour?.imageUrl,
+    'chapterFour',
+    'Chapter 4',
+    'Four Years of Loving You, Baby'
+  );
+
+  (content.galleryPhotos || []).forEach((photo, idx) => {
+    checkSlot(
+      photo.imageUrl,
+      photo.id,
+      `Gallery · Frame #${idx + 1}`,
+      photo.category
+    );
+  });
+
+  const totalSlots =
+    3 +
+    (content.chapterThree?.memories?.length || 6) +
+    (content.galleryPhotos?.length || 6);
+
+  return {
+    realCount,
+    totalSlots,
+    missingSlots,
+  };
+}
+
+export function applyQuickUploadToSlot(
+  content: LoveStoryContent,
+  slotKey: string,
+  dataUrl: string
+): LoveStoryContent {
+  if (slotKey === 'chapterOne') {
+    return {
+      ...content,
+      chapterOne: { ...content.chapterOne, imageUrl: dataUrl },
+    };
+  }
+  if (slotKey === 'chapterTwo') {
+    return {
+      ...content,
+      chapterTwo: { ...content.chapterTwo, imageUrl: dataUrl },
+    };
+  }
+  if (slotKey === 'chapterFour') {
+    return {
+      ...content,
+      chapterFour: { ...content.chapterFour, imageUrl: dataUrl },
+    };
+  }
+  if (slotKey.startsWith('mem-')) {
+    return {
+      ...content,
+      chapterThree: {
+        ...content.chapterThree,
+        memories: content.chapterThree.memories.map((m) =>
+          m.id === slotKey ? { ...m, imageUrl: dataUrl, isPlaceholder: false } : m
+        ),
+      },
+    };
+  }
+  return {
+    ...content,
+    galleryPhotos: content.galleryPhotos.map((p) =>
+      p.id === slotKey ? { ...p, imageUrl: dataUrl, isPlaceholder: false } : p
+    ),
+  };
+}
+
 

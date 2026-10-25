@@ -112,12 +112,12 @@ export const OpeningScreen: React.FC<OpeningScreenProps> = ({
             {musicEnabledChoice ? (
               <>
                 <Music className="w-3.5 h-3.5 text-[#D8B16D]" />
-                <span>may music to</span>
+                <span>Has Sounds</span>
               </>
             ) : (
               <>
                 <VolumeX className="w-3.5 h-3.5 text-[#C98291]" />
-                <span>Soft romantic piano music (Currently Muted — Click to Enable)</span>
+                <span>Has Sounds (Muted)</span>
               </>
             )}
           </button>
@@ -137,7 +137,7 @@ export const OpeningScreen: React.FC<OpeningScreenProps> = ({
       {/* Bottom dedication line */}
       <div className="relative z-10 text-center">
         <p className="font-serif-editorial italic text-sm md:text-base text-[#F1D6DC]/85 tracking-wide">
-          Made with all my love, by James, for Baby Loraine.
+          Made with all my love (From Me to You).
         </p>
       </div>
     </section>

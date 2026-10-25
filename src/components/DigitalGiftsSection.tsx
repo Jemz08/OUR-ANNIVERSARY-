@@ -65,7 +65,7 @@ export const DigitalGiftsSection: React.FC<DigitalGiftsSectionProps> = ({
             </h3>
             <p className="text-sm text-[#F1D6DC]/85 leading-relaxed mb-5">
               Our selected favorite photo together, framed in a full-screen
-              keepsake view with a personal note from James.
+              keepsake view with a personal note (From Me to You).
             </p>
 
             {mainPhoto && (

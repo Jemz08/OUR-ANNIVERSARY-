@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  applyQuickUploadToSlot,
   calculateAnniversaryMetrics,
   filterGalleryByCategory,
   getMainAnniversaryPhoto,
+  getPhotoSyncSummary,
   mergeUploadedPhotosWithCleanText,
   removeGalleryPhotoById,
   reorderGalleryPhotos,
@@ -108,3 +110,31 @@ test('mergeUploadedPhotosWithCleanText preserves uploaded photos and upgrades br
   assert.equal(merged.chapterOne.imageCaption.includes('['), false);
   assert.equal(merged.chapterFive.personalWishPlaceholder.includes('['), false);
 });
+
+test('getPhotoSyncSummary and applyQuickUploadToSlot accurately track and fill missing photo slots', () => {
+  const initialSummary = getPhotoSyncSummary(INITIAL_LOVE_STORY_CONTENT);
+  assert.equal(initialSummary.totalSlots, 15);
+  assert.equal(initialSummary.realCount, 0);
+  assert.equal(initialSummary.missingSlots.length, 15);
+
+  let updated = applyQuickUploadToSlot(
+    INITIAL_LOVE_STORY_CONTENT,
+    'chapterFour',
+    'data:image/jpeg;base64,REAL_CH4'
+  );
+  updated = applyQuickUploadToSlot(
+    updated,
+    'mem-2',
+    'data:image/jpeg;base64,REAL_MEM2'
+  );
+  updated = applyQuickUploadToSlot(
+    updated,
+    'gal-6',
+    'data:image/jpeg;base64,REAL_GAL6'
+  );
+
+  const afterSummary = getPhotoSyncSummary(updated);
+  assert.equal(afterSummary.realCount, 3);
+  assert.equal(afterSummary.missingSlots.length, 12);
+});
+

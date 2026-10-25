@@ -91,7 +91,7 @@ export const FinalScreenSection: React.FC<FinalScreenSectionProps> = ({
 
         {/* Quiet Copyright / Dedication Footer */}
         <footer className="pt-16 text-xs text-[#F1D6DC]/65 flex flex-wrap items-center justify-center gap-2">
-          <span>Created by James for Baby Loraine</span>
+          <span>Made with all my love (From Me to You)</span>
           <span aria-hidden="true">·</span>
           <Heart className="w-3.5 h-3.5 text-[#D8B16D] inline" />
           <span aria-hidden="true">·</span>
