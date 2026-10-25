@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   applyQuickUploadToSlot,
   calculateAnniversaryMetrics,
+  computeStoryPhotoSignature,
   filterGalleryByCategory,
   getMainAnniversaryPhoto,
   getPhotoSyncSummary,
@@ -12,6 +13,7 @@ import {
   setMainPhotoById,
   toggleOpenedNoteIds,
   validateImportedStoryContent,
+  verifyRemoteStoryMatchesLocal,
 } from './storyLogic';
 import { INITIAL_LOVE_STORY_CONTENT, LoveStoryContent } from '../data/loveStoryData';
 
@@ -137,4 +139,29 @@ test('getPhotoSyncSummary and applyQuickUploadToSlot accurately track and fill m
   assert.equal(afterSummary.realCount, 3);
   assert.equal(afterSummary.missingSlots.length, 12);
 });
+
+test('verifyRemoteStoryMatchesLocal detects mismatched remote slots and verifies matching payloads', () => {
+  const localWithPhoto = applyQuickUploadToSlot(
+    INITIAL_LOVE_STORY_CONTENT,
+    'mem-2',
+    'data:image/jpeg;base64,REAL_LAUGHTER_PHOTO'
+  );
+  const remoteWithoutPhoto = INITIAL_LOVE_STORY_CONTENT;
+
+  const mismatchCheck = verifyRemoteStoryMatchesLocal(
+    localWithPhoto,
+    remoteWithoutPhoto
+  );
+  assert.equal(mismatchCheck.verified, false);
+  assert.deepEqual(mismatchCheck.mismatchedSlots, ['mem-2']);
+
+  const matchCheck = verifyRemoteStoryMatchesLocal(
+    localWithPhoto,
+    localWithPhoto
+  );
+  assert.equal(matchCheck.verified, true);
+  assert.equal(matchCheck.signatureMatches, true);
+  assert.ok(computeStoryPhotoSignature(localWithPhoto).includes('mem-2=real:'));
+});
+
 

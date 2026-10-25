@@ -5,7 +5,12 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { combineStoriesPreservingRealPhotos } from './src/utils/storyLogic';
+import {
+  combineStoriesPreservingRealPhotos,
+  computeStoryPhotoSignature,
+  getPhotoSyncSummary,
+  verifyRemoteStoryMatchesLocal,
+} from './src/utils/storyLogic';
 import { LoveStoryContent } from './src/data/loveStoryData';
 
 dotenv.config();
@@ -16,6 +21,7 @@ const PUBLISHED_STORY_PATH = path.join(__dirname, 'published-story.json');
 const PUBLIC_DIR_PATH = path.join(__dirname, 'public');
 const PUBLIC_STORY_PATH = path.join(PUBLIC_DIR_PATH, 'published-story.json');
 const SRC_DATA_STORY_PATH = path.join(__dirname, 'src', 'data', 'publishedStory.json');
+const LIVE_VERCEL_URL = 'https://for-our4th-mu.vercel.app';
 
 const SYSTEM_INSTRUCTION = `You are a warm, sincere, emotionally honest romantic anniversary writing assistant helping James personalize his fourth anniversary website for his girlfriend, Loraine, whom he lovingly calls "Baby".
 Key facts you must always respect:
@@ -42,13 +48,21 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
-async function readExistingPublishedContent(): Promise<LoveStoryContent | null> {
+async function readExistingPublishedPayload(): Promise<{
+  content: LoveStoryContent;
+  publishedAt?: string;
+  giftModeDefault?: boolean;
+} | null> {
   for (const candidatePath of [PUBLIC_STORY_PATH, PUBLISHED_STORY_PATH, SRC_DATA_STORY_PATH]) {
     try {
       const raw = await fs.readFile(candidatePath, 'utf-8');
       const parsed = JSON.parse(raw);
       if (parsed?.content) {
-        return parsed.content as LoveStoryContent;
+        return parsed as {
+          content: LoveStoryContent;
+          publishedAt?: string;
+          giftModeDefault?: boolean;
+        };
       }
     } catch {
       // try next
@@ -64,20 +78,97 @@ async function startServer() {
   // Support large payloads for base64 encoded high-res anniversary photos
   app.use(express.json({ limit: '50mb' }));
 
+  // Serve fresh un-cached /published-story.json for direct verification
+  app.get('/published-story.json', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const payload = await readExistingPublishedPayload();
+    if (payload) {
+      return res.json(payload);
+    }
+    return res.status(404).json({ error: 'No published-story.json found' });
+  });
+
   // Load saved/published story for Loraine's device
   app.get('/api/story', async (_req, res) => {
-    for (const candidatePath of [PUBLIC_STORY_PATH, PUBLISHED_STORY_PATH, SRC_DATA_STORY_PATH]) {
-      try {
-        const raw = await fs.readFile(candidatePath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (parsed?.content) {
-          return res.json({ found: true, ...parsed });
-        }
-      } catch {
-        // try next
-      }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const payload = await readExistingPublishedPayload();
+    if (payload) {
+      return res.json({ found: true, ...payload });
     }
     return res.json({ found: false });
+  });
+
+  // Verify both local /published-story.json and live Vercel deployment (https://for-our4th-mu.vercel.app/published-story.json)
+  app.get('/api/story/sync-status', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    const localPayload = await readExistingPublishedPayload();
+    const localSummary = localPayload?.content
+      ? getPhotoSyncSummary(localPayload.content)
+      : { realCount: 0, totalSlots: 15, missingSlots: [] };
+    const localSignature = localPayload?.content
+      ? computeStoryPhotoSignature(localPayload.content)
+      : '';
+
+    let liveVercel = {
+      reachable: false,
+      url: LIVE_VERCEL_URL,
+      realCount: 0,
+      totalSlots: 15,
+      publishedAt: null as string | null,
+      isLiveMatchedWithProject: false,
+      mismatchedSlots: [] as string[],
+    };
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4500);
+      const vercelRes = await fetch(
+        `${LIVE_VERCEL_URL}/published-story.json?t=${Date.now()}`,
+        {
+          signal: controller.signal,
+          headers: { 'Cache-Control': 'no-cache' },
+        }
+      );
+      clearTimeout(timeout);
+      if (vercelRes.ok) {
+        const vercelJson = (await vercelRes.json()) as {
+          content?: LoveStoryContent;
+          publishedAt?: string;
+        };
+        const vercelContent = vercelJson?.content;
+        if (vercelContent) {
+          const vSummary = getPhotoSyncSummary(vercelContent);
+          const verification = localPayload?.content
+            ? verifyRemoteStoryMatchesLocal(localPayload.content, vercelContent)
+            : { verified: false, mismatchedSlots: [] };
+          liveVercel = {
+            reachable: true,
+            url: LIVE_VERCEL_URL,
+            realCount: vSummary.realCount,
+            totalSlots: vSummary.totalSlots,
+            publishedAt: vercelJson.publishedAt || null,
+            isLiveMatchedWithProject:
+              verification.verified &&
+              vSummary.realCount === localSummary.realCount,
+            mismatchedSlots: verification.mismatchedSlots,
+          };
+        }
+      }
+    } catch {
+      // ignore network error if offline
+    }
+
+    return res.json({
+      ok: true,
+      projectBundle: {
+        realCount: localSummary.realCount,
+        totalSlots: localSummary.totalSlots,
+        missingSlots: localSummary.missingSlots,
+        publishedAt: localPayload?.publishedAt || null,
+        signature: localSignature,
+      },
+      liveVercel,
+    });
   });
 
   // Save & publish James's customized story + photos to /public/published-story.json and /src/data/publishedStory.json so GitHub + Vercel + Cloud Run bundle it automatically
@@ -87,11 +178,11 @@ async function startServer() {
       if (!content || typeof content !== 'object') {
         return res.status(400).json({ error: 'Invalid story content payload.' });
       }
-      const existingContent = await readExistingPublishedContent();
-      const mergedContent = existingContent
+      const existingPayload = await readExistingPublishedPayload();
+      const mergedContent = existingPayload?.content
         ? combineStoriesPreservingRealPhotos(
             content as LoveStoryContent,
-            existingContent
+            existingPayload.content
           )
         : (content as LoveStoryContent);
 
@@ -105,9 +196,12 @@ async function startServer() {
       await fs.writeFile(PUBLIC_STORY_PATH, serialized, 'utf-8');
       await fs.writeFile(PUBLISHED_STORY_PATH, serialized, 'utf-8');
       await fs.writeFile(SRC_DATA_STORY_PATH, serialized, 'utf-8');
+      const summary = getPhotoSyncSummary(mergedContent);
       return res.json({
         ok: true,
         publishedAt: payload.publishedAt,
+        realCount: summary.realCount,
+        totalSlots: summary.totalSlots,
         content: mergedContent,
       });
     } catch (err) {

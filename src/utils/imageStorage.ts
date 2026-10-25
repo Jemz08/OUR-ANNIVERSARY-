@@ -1,4 +1,5 @@
 import { LoveStoryContent } from '../data/loveStoryData';
+import { combineStoriesPreservingRealPhotos } from './storyLogic';
 
 const IDB_NAME = 'loraine_fourth_anniversary_idb';
 const IDB_STORE = 'story_store';
@@ -143,23 +144,6 @@ function openStoryDB(): Promise<IDBDatabase> {
   });
 }
 
-export async function saveStoryToIndexedDB(
-  story: LoveStoryContent
-): Promise<void> {
-  try {
-    const db = await openStoryDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).put(story, IDB_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
-  } catch {
-    // Fallback handled by server + localStorage
-  }
-}
-
 export async function loadStoryFromIndexedDB(): Promise<LoveStoryContent | null> {
   try {
     const db = await openStoryDB();
@@ -178,3 +162,26 @@ export async function loadStoryFromIndexedDB(): Promise<LoveStoryContent | null>
     return null;
   }
 }
+
+export async function saveStoryToIndexedDB(
+  story: LoveStoryContent
+): Promise<LoveStoryContent> {
+  try {
+    const existing = await loadStoryFromIndexedDB();
+    const merged = existing
+      ? combineStoriesPreservingRealPhotos(story, existing)
+      : story;
+    const db = await openStoryDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(merged, IDB_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+    return merged;
+  } catch {
+    return story;
+  }
+}
+

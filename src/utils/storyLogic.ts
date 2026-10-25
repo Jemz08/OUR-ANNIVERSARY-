@@ -490,4 +490,114 @@ export function applyQuickUploadToSlot(
   };
 }
 
+function getSlotFingerprint(url?: string): string {
+  if (!isRealUploadedPhoto(url)) return 'placeholder';
+  const s = url!;
+  return `real:${s.length}:${s.slice(0, 32)}:${s.slice(-24)}`;
+}
+
+export function computeStoryPhotoSignature(content: LoveStoryContent): string {
+  const parts: string[] = [
+    `c1=${getSlotFingerprint(content.chapterOne?.imageUrl)}`,
+    `c2=${getSlotFingerprint(content.chapterTwo?.imageUrl)}`,
+    `c4=${getSlotFingerprint(content.chapterFour?.imageUrl)}`,
+  ];
+  (content.chapterThree?.memories || []).forEach((m) => {
+    parts.push(`${m.id}=${getSlotFingerprint(m.imageUrl)}`);
+  });
+  (content.galleryPhotos || []).forEach((g) => {
+    parts.push(`${g.id}=${getSlotFingerprint(g.imageUrl)}`);
+  });
+  return parts.join('|');
+}
+
+export interface RemoteSyncVerificationResult {
+  verified: boolean;
+  localRealCount: number;
+  remoteRealCount: number;
+  totalSlots: number;
+  mismatchedSlots: string[];
+  signatureMatches: boolean;
+}
+
+export function verifyRemoteStoryMatchesLocal(
+  localContent: LoveStoryContent,
+  remoteContent: LoveStoryContent | null | undefined
+): RemoteSyncVerificationResult {
+  const localSummary = getPhotoSyncSummary(localContent);
+  if (!remoteContent) {
+    return {
+      verified: false,
+      localRealCount: localSummary.realCount,
+      remoteRealCount: 0,
+      totalSlots: localSummary.totalSlots,
+      mismatchedSlots: ['all'],
+      signatureMatches: false,
+    };
+  }
+
+  const remoteSummary = getPhotoSyncSummary(remoteContent);
+  const mismatchedSlots: string[] = [];
+
+  const checkPair = (
+    slotKey: string,
+    localUrl?: string,
+    remoteUrl?: string
+  ) => {
+    if (isRealUploadedPhoto(localUrl)) {
+      if (!isRealUploadedPhoto(remoteUrl)) {
+        mismatchedSlots.push(slotKey);
+      } else if (getSlotFingerprint(localUrl) !== getSlotFingerprint(remoteUrl)) {
+        mismatchedSlots.push(slotKey);
+      }
+    }
+  };
+
+  checkPair(
+    'chapterOne',
+    localContent.chapterOne?.imageUrl,
+    remoteContent.chapterOne?.imageUrl
+  );
+  checkPair(
+    'chapterTwo',
+    localContent.chapterTwo?.imageUrl,
+    remoteContent.chapterTwo?.imageUrl
+  );
+  checkPair(
+    'chapterFour',
+    localContent.chapterFour?.imageUrl,
+    remoteContent.chapterFour?.imageUrl
+  );
+
+  (localContent.chapterThree?.memories || []).forEach((localMem, idx) => {
+    const remoteMem =
+      remoteContent.chapterThree?.memories?.find((m) => m.id === localMem.id) ||
+      remoteContent.chapterThree?.memories?.[idx];
+    checkPair(localMem.id, localMem.imageUrl, remoteMem?.imageUrl);
+  });
+
+  (localContent.galleryPhotos || []).forEach((localGal, idx) => {
+    const remoteGal =
+      remoteContent.galleryPhotos?.find((g) => g.id === localGal.id) ||
+      remoteContent.galleryPhotos?.[idx];
+    checkPair(localGal.id, localGal.imageUrl, remoteGal?.imageUrl);
+  });
+
+  const signatureMatches =
+    computeStoryPhotoSignature(localContent) ===
+    computeStoryPhotoSignature(remoteContent);
+
+  return {
+    verified:
+      mismatchedSlots.length === 0 &&
+      remoteSummary.realCount >= localSummary.realCount,
+    localRealCount: localSummary.realCount,
+    remoteRealCount: remoteSummary.realCount,
+    totalSlots: localSummary.totalSlots,
+    mismatchedSlots,
+    signatureMatches,
+  };
+}
+
+
 

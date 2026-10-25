@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Music,
   Pause,
@@ -13,6 +13,8 @@ import {
   Check,
   Upload,
   FileUp,
+  RefreshCw,
+  Globe,
 } from 'lucide-react';
 import {
   INITIAL_LOVE_STORY_CONTENT,
@@ -27,6 +29,7 @@ import {
   getPhotoSyncSummary,
   mergeUploadedPhotosWithCleanText,
   validateImportedStoryContent,
+  verifyRemoteStoryMatchesLocal,
 } from './utils/storyLogic';
 import {
   compressImageFile,
@@ -152,6 +155,29 @@ export default function App() {
   const [importStatusBanner, setImportStatusBanner] = useState<string | null>(
     null
   );
+  const [remoteSyncState, setRemoteSyncState] = useState<
+    'idle' | 'syncing' | 'verifying' | 'verified' | 'static-local' | 'error'
+  >('idle');
+  const [remoteVerifiedCount, setRemoteVerifiedCount] = useState<number>(() =>
+    getPhotoSyncSummary(getInitialBundledStory()).realCount
+  );
+  const [liveVercelStatus, setLiveVercelStatus] = useState<{
+    checked: boolean;
+    reachable: boolean;
+    realCount: number;
+    totalSlots: number;
+    isLiveMatchedWithProject: boolean;
+    publishedAt: string | null;
+  }>({
+    checked: false,
+    reachable: false,
+    realCount: 12,
+    totalSlots: 15,
+    isLiveMatchedWithProject: false,
+    publishedAt: null,
+  });
+
+  const hasCompletedInitialHydrationRef = useRef<boolean>(false);
 
   const [studioModalState, setStudioModalState] = useState<{
     isOpen: boolean;
@@ -163,51 +189,171 @@ export default function App() {
     analyzeImage: null,
   });
 
-  const publishContentToServer = useCallback(
-    async (
-      storyToSave: LoveStoryContent,
-      giftModeDefault = true
-    ): Promise<{ ok: boolean; publishedAt?: string; error?: string }> => {
-      await saveStoryToIndexedDB(storyToSave);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(storyToSave));
-      } catch {
-        // IndexedDB and server handle large payloads
-      }
+  const checkLiveVercelSyncStatus = useCallback(
+    async (currentLocalStory: LoveStoryContent) => {
       if (isStaticProductionHost()) {
-        return { ok: true, publishedAt: new Date().toISOString() };
-      }
-      setIsSavingToServer(true);
-      try {
-        const res = await fetch('/api/story/publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: storyToSave,
-            giftModeDefault,
-          }),
-        });
-        const data = await res.json();
-        setIsSavingToServer(false);
-        if (data.ok) {
-          setLastPublishedAt(data.publishedAt);
-          if (data.content) {
-            setContent((prev) =>
-              combineStoriesPreservingRealPhotos(prev, data.content)
+        try {
+          const res = await fetch(`/published-story.json?t=${Date.now()}`, {
+            cache: 'no-store',
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const rawStory = (data?.content || data) as LoveStoryContent;
+            const vSummary = getPhotoSyncSummary(rawStory);
+            const verification = verifyRemoteStoryMatchesLocal(
+              currentLocalStory,
+              rawStory
             );
+            setLiveVercelStatus({
+              checked: true,
+              reachable: true,
+              realCount: vSummary.realCount,
+              totalSlots: vSummary.totalSlots,
+              isLiveMatchedWithProject:
+                verification.verified &&
+                vSummary.realCount ===
+                  getPhotoSyncSummary(currentLocalStory).realCount,
+              publishedAt: data?.publishedAt || null,
+            });
           }
-          return { ok: true, publishedAt: data.publishedAt };
+        } catch {
+          // ignore
         }
-        return { ok: false, error: data.error || 'Could not publish story' };
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/story/sync-status?t=${Date.now()}`, {
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.liveVercel) {
+            setLiveVercelStatus({
+              checked: true,
+              reachable: Boolean(data.liveVercel.reachable),
+              realCount: Number(data.liveVercel.realCount ?? 0),
+              totalSlots: Number(data.liveVercel.totalSlots ?? 15),
+              isLiveMatchedWithProject: Boolean(
+                data.liveVercel.isLiveMatchedWithProject
+              ),
+              publishedAt: data.liveVercel.publishedAt || null,
+            });
+          }
+        }
       } catch {
-        setIsSavingToServer(false);
-        return { ok: false, error: 'Saved locally in browser' };
+        // ignore
       }
     },
     []
   );
 
-  // Wrapper for all photo uploads / changes: immediately updates state AND persists to IndexedDB + Server (/public/published-story.json & /src/data/publishedStory.json)
+  const publishContentToServer = useCallback(
+    async (
+      storyToSave: LoveStoryContent,
+      giftModeDefault = true
+    ): Promise<{
+      ok: boolean;
+      verified?: boolean;
+      publishedAt?: string;
+      error?: string;
+    }> => {
+      const mergedIdb = await saveStoryToIndexedDB(storyToSave);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedIdb));
+      } catch {
+        // IndexedDB and server handle large payloads
+      }
+
+      if (isStaticProductionHost()) {
+        setRemoteSyncState('static-local');
+        void checkLiveVercelSyncStatus(mergedIdb);
+        return {
+          ok: true,
+          verified: false,
+          publishedAt: new Date().toISOString(),
+        };
+      }
+
+      setIsSavingToServer(true);
+      setRemoteSyncState('syncing');
+
+      try {
+        let currentPayloadToSave = mergedIdb;
+        let verified = false;
+        let latestPublishedAt: string | undefined;
+
+        // Attempt publish + explicit remote /published-story.json verification (up to 2 attempts)
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const res = await fetch('/api/story/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: currentPayloadToSave,
+              giftModeDefault,
+            }),
+          });
+          const data = await res.json();
+          if (data?.ok) {
+            latestPublishedAt = data.publishedAt;
+            setLastPublishedAt(data.publishedAt);
+            if (data.content) {
+              currentPayloadToSave = combineStoriesPreservingRealPhotos(
+                currentPayloadToSave,
+                data.content as LoveStoryContent
+              );
+              setContent((prev) =>
+                combineStoriesPreservingRealPhotos(prev, currentPayloadToSave)
+              );
+            }
+          }
+
+          // Explicit background verification of remote /published-story.json
+          setRemoteSyncState('verifying');
+          const verifyRes = await fetch(
+            `/published-story.json?t=${Date.now()}-${attempt}`,
+            { cache: 'no-store' }
+          );
+          if (verifyRes.ok) {
+            const remoteJson = await verifyRes.json();
+            const remoteStory = (remoteJson?.content ||
+              remoteJson) as LoveStoryContent;
+            const check = verifyRemoteStoryMatchesLocal(
+              currentPayloadToSave,
+              remoteStory
+            );
+            setRemoteVerifiedCount(check.remoteRealCount);
+            if (check.verified) {
+              verified = true;
+              break;
+            }
+            // Merge any extra remote photos before retry
+            currentPayloadToSave = combineStoriesPreservingRealPhotos(
+              currentPayloadToSave,
+              remoteStory
+            );
+          }
+        }
+
+        setIsSavingToServer(false);
+        setRemoteSyncState(verified ? 'verified' : 'error');
+        void checkLiveVercelSyncStatus(currentPayloadToSave);
+
+        return {
+          ok: true,
+          verified,
+          publishedAt: latestPublishedAt,
+        };
+      } catch {
+        setIsSavingToServer(false);
+        setRemoteSyncState('error');
+        return { ok: false, error: 'Saved locally in browser' };
+      }
+    },
+    [checkLiveVercelSyncStatus]
+  );
+
+  // Wrapper for all photo uploads / changes: immediately updates state + IndexedDB AND explicitly triggers background /published-story.json verification
   const handleUserUpdateContent = useCallback(
     (updater: (prev: LoveStoryContent) => LoveStoryContent) => {
       setContent((prev) => {
@@ -221,15 +367,17 @@ export default function App() {
     [publishContentToServer]
   );
 
-  // On initial mount: combine photos from Bundled JSON + Server + IndexedDB + LocalStorage so NO uploaded photo is ever lost,
-  // and optimize any oversized photos (>320KB) so all 15+ photos stay lightweight.
+  // Forced synchronization strategy on initial hydration:
+  // 1. Reads IndexedDB + localStorage + bundled JSON + un-cached /api/story & /published-story.json BEFORE any write
+  // 2. Merges all real photos non-destructively and optimizes oversized images
+  // 3. Forces an immediate sync + verification against remote /published-story.json and checks live Vercel status
   useEffect(() => {
     let isMounted = true;
 
-    async function hydrateAndOptimizeAllSources() {
+    async function hydrateAndForceSyncAllSources() {
       let combined = getInitialBundledStory();
 
-      // 1. Check IndexedDB
+      // 1. Read IndexedDB first before any writes can occur
       const idbStory = await loadStoryFromIndexedDB();
       if (idbStory) {
         const cleanedIdb = mergeUploadedPhotosWithCleanText(
@@ -239,10 +387,12 @@ export default function App() {
         combined = combineStoriesPreservingRealPhotos(cleanedIdb, combined);
       }
 
-      // 2. Check /api/story or static /published-story.json
+      // 2. Fetch un-cached remote /api/story and /published-story.json
       let remoteGiftDefault: boolean | undefined;
       try {
-        const apiRes = await fetch('/api/story');
+        const apiRes = await fetch(`/api/story?t=${Date.now()}`, {
+          cache: 'no-store',
+        });
         if (apiRes.ok) {
           const data = await apiRes.json();
           if (data?.found && data?.content) {
@@ -261,56 +411,72 @@ export default function App() {
           }
         }
       } catch {
-        // Fallback to static /published-story.json on Vercel
-        try {
-          const staticRes = await fetch('/published-story.json');
-          if (staticRes.ok) {
-            const staticData = await staticRes.json();
-            const rawStory = staticData?.content || staticData;
-            if (rawStory?.groomName) {
-              const cleanedStatic = mergeUploadedPhotosWithCleanText(
-                rawStory as LoveStoryContent,
-                INITIAL_LOVE_STORY_CONTENT
-              );
-              combined = combineStoriesPreservingRealPhotos(
-                combined,
-                cleanedStatic
-              );
-              remoteGiftDefault = staticData?.giftModeDefault ?? true;
-            }
+        // Fallback to un-cached static /published-story.json on Vercel
+      }
+
+      try {
+        const staticRes = await fetch(`/published-story.json?t=${Date.now()}`, {
+          cache: 'no-store',
+        });
+        if (staticRes.ok) {
+          const staticData = await staticRes.json();
+          const rawStory = staticData?.content || staticData;
+          if (rawStory?.groomName) {
+            const cleanedStatic = mergeUploadedPhotosWithCleanText(
+              rawStory as LoveStoryContent,
+              INITIAL_LOVE_STORY_CONTENT
+            );
+            combined = combineStoriesPreservingRealPhotos(
+              combined,
+              cleanedStatic
+            );
+            remoteGiftDefault =
+              remoteGiftDefault ?? staticData?.giftModeDefault ?? true;
           }
-        } catch {
-          // ignore
         }
+      } catch {
+        // ignore
       }
 
       // 3. Optimize any oversized photos (> 320KB) so all 15+ photos fit easily in localStorage & GitHub/Vercel
       const { optimized } = await optimizeAllPhotosInStory(combined);
 
       if (!isMounted) return;
+      hasCompletedInitialHydrationRef.current = true;
       setContent(optimized);
+
+      // 4. Forced background synchronization & verification of remote /published-story.json
       void publishContentToServer(optimized, true);
 
-      // If a visitor opens the link for the first time (no local GIFT_MODE_KEY set), respect gift mode if requested via URL
+      // On static production hosts (Vercel), default to Loraine's Gift View (unless ?edit=1).
+      // In AI Studio, keep Photo Upload Mode open whenever any photo slot is still missing so James sees the Sync & Verification Bar.
       const params = new URLSearchParams(window.location.search);
-      if (
-        params.get('edit') !== '1' &&
-        localStorage.getItem(GIFT_MODE_KEY) === null &&
-        !localStorage.getItem(STORAGE_KEY) &&
+      if (params.get('gift') === '1') {
+        setIsGiftMode(true);
+      } else if (params.get('edit') === '1') {
+        setIsGiftMode(false);
+      } else if (isStaticProductionHost()) {
+        setIsGiftMode(true);
+      } else if (getPhotoSyncSummary(optimized).missingSlots.length > 0) {
+        setIsGiftMode(false);
+      } else if (
+        localStorage.getItem(GIFT_MODE_KEY) === 'true' &&
         remoteGiftDefault
       ) {
         setIsGiftMode(true);
       }
     }
 
-    void hydrateAndOptimizeAllSources();
+    void hydrateAndForceSyncAllSources();
 
     return () => {
       isMounted = false;
     };
   }, [publishContentToServer]);
 
+  // Only persist on content changes AFTER initial hydration has completed so mount never clobbers IndexedDB
   useEffect(() => {
+    if (!hasCompletedInitialHydrationRef.current) return;
     void saveStoryToIndexedDB(content);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(content));
@@ -760,26 +926,101 @@ export default function App() {
         </nav>
       </div>
 
-      {/* Cross-Device Photo Sync & Missing Photos Quick-Uploader (Visible Only in James's Photo Upload Mode) */}
+      {/* Cross-Device Photo Sync & Remote /published-story.json + Live Vercel Deployment Verification Bar */}
       {!isGiftMode && (
-        <div className="bg-[#2D0816] border-b border-[#D8B16D]/30 px-6 py-4">
+        <div
+          aria-label="Remote payload and live Vercel synchronization status"
+          className="bg-[#2D0816] border-b border-[#D8B16D]/30 px-6 py-4"
+        >
           <div className="max-w-6xl mx-auto flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md bg-[#D8B16D] text-[#270812] font-mono-tabular text-xs font-bold">
-                  {photoSyncSummary.realCount} / {photoSyncSummary.totalSlots}{' '}
-                  Real Photos Saved
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Indicator 1: Local + /published-story.json Verification Pill */}
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md font-mono-tabular text-xs font-bold ${
+                    remoteSyncState === 'syncing' ||
+                    remoteSyncState === 'verifying'
+                      ? 'bg-amber-300 text-[#270812]'
+                      : remoteSyncState === 'verified'
+                      ? 'bg-emerald-400 text-[#14291D]'
+                      : 'bg-[#D8B16D] text-[#270812]'
+                  }`}
+                >
+                  {remoteSyncState === 'syncing' ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Syncing to /published-story.json...</span>
+                    </>
+                  ) : remoteSyncState === 'verifying' ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Verifying /published-story.json...</span>
+                    </>
+                  ) : remoteSyncState === 'verified' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>
+                        /published-story.json Verified ({remoteVerifiedCount}/
+                        {photoSyncSummary.totalSlots} Photos)
+                      </span>
+                    </>
+                  ) : (
+                    <span>
+                      {photoSyncSummary.realCount} /{' '}
+                      {photoSyncSummary.totalSlots} Real Photos Saved
+                    </span>
+                  )}
                 </span>
-                <span className="text-xs sm:text-sm font-medium text-[#FFF7F0]">
-                  {photoSyncSummary.missingSlots.length === 0
-                    ? 'All 15 photo frames are saved in this project! Push to GitHub so Vercel updates all phones.'
-                    : `${photoSyncSummary.missingSlots.length} frame${
-                        photoSyncSummary.missingSlots.length > 1 ? 's' : ''
-                      } still need your photo here in AI Studio before pushing to GitHub:`}
+
+                {/* Indicator 2: Live Vercel Deployment Verification Pill */}
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold border ${
+                    liveVercelStatus.isLiveMatchedWithProject &&
+                    liveVercelStatus.realCount === photoSyncSummary.totalSlots
+                      ? 'bg-emerald-950/90 border-emerald-400/60 text-emerald-200'
+                      : liveVercelStatus.isLiveMatchedWithProject
+                      ? 'bg-[#4A1025] border-[#D8B16D]/50 text-[#FFF7F0]'
+                      : 'bg-amber-950/80 border-amber-400/60 text-amber-200'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5 text-[#D8B16D]" />
+                  {liveVercelStatus.isLiveMatchedWithProject &&
+                  liveVercelStatus.realCount === photoSyncSummary.totalSlots ? (
+                    <span>
+                      ✓ Live on Vercel: All {liveVercelStatus.realCount}/
+                      {liveVercelStatus.totalSlots} Photos Deployed
+                    </span>
+                  ) : liveVercelStatus.reachable ? (
+                    <span>
+                      Live Vercel Deployment: {liveVercelStatus.realCount}/
+                      {liveVercelStatus.totalSlots} Photos Live
+                      {photoSyncSummary.realCount > liveVercelStatus.realCount
+                        ? ` · Push to GitHub to deploy ${photoSyncSummary.realCount}/${photoSyncSummary.totalSlots} to Vercel`
+                        : ''}
+                    </span>
+                  ) : (
+                    <span>
+                      Ready for GitHub → Vercel ({photoSyncSummary.realCount}/
+                      {photoSyncSummary.totalSlots} in bundle)
+                    </span>
+                  )}
                 </span>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleQuickLockInAndPublish}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#D8B16D] hover:bg-[#E7C686] text-[#270812] text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${
+                      isSavingToServer ? 'animate-spin' : ''
+                    }`}
+                  />
+                  <span>Force Sync &amp; Verify Now</span>
+                </button>
+
                 <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4A1025] hover:bg-[#611530] border border-[#D8B16D]/50 text-xs text-[#FFF7F0] font-medium cursor-pointer transition-colors">
                   <FileUp className="w-3.5 h-3.5 text-[#D8B16D]" />
                   <span>Import Chrome Backup (.json)</span>
@@ -792,6 +1033,14 @@ export default function App() {
                 </label>
               </div>
             </div>
+
+            <p className="text-xs text-[#F1D6DC]/90">
+              {photoSyncSummary.missingSlots.length === 0
+                ? '✓ All 15 photo frames are verified in /published-story.json! Push to GitHub so Vercel builds all 15 photos for every phone.'
+                : `${photoSyncSummary.missingSlots.length} frame${
+                    photoSyncSummary.missingSlots.length > 1 ? 's' : ''
+                  } still using default artwork in /published-story.json — upload them below, then push to GitHub so Vercel updates all phones:`}
+            </p>
 
             {importStatusBanner && (
               <p className="text-xs text-emerald-300 font-medium">
