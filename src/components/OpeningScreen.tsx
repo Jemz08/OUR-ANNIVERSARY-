@@ -112,7 +112,7 @@ export const OpeningScreen: React.FC<OpeningScreenProps> = ({
             {musicEnabledChoice ? (
               <>
                 <Music className="w-3.5 h-3.5 text-[#D8B16D]" />
-                <span>Accompany with soft romantic piano music (Enabled)</span>
+                <span>may music to</span>
               </>
             ) : (
               <>
