@@ -456,7 +456,7 @@ export const TimelineSection: React.FC<TimelineSectionProps> = ({
         <div className="my-8 p-6 rounded-xl bg-[#270812]/80 border border-[#D8B16D]/45 text-left">
           <div className="mb-3">
             <span className="text-xs uppercase tracking-widest text-[#D8B16D]">
-              James’s Wish for Our Future
+              My Wish for Our Future
             </span>
           </div>
           <p className="font-serif-editorial italic text-xl sm:text-2xl text-[#FFF7F0] leading-relaxed">
